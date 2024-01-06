@@ -502,6 +502,9 @@ class Communication : public CommQueue<> {
 
             q->iv->rssi = rssi;
             q->iv->doCalculations();
+            if (rec == q->iv->getRecordStruct(RealTimeRunData_Debug)){
+                q->iv->addHistory();
+            }
 
             if(AlarmData == q->cmd) {
                 uint8_t i = 0;

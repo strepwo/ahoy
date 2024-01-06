@@ -116,6 +116,10 @@ class RestApi {
                     getIvPowerLimitAck(root, request->url().substring(21).toInt());
                 else if(path.substring(0, 14) == "inverter/grid/")
                     getGridProfile(root, request->url().substring(19).toInt());
+                else if(path.substring(0, 17) == "inverter/history/")
+                    getInverterHistory(root, request->url().substring(22).toInt(),request->url().substring(24).toInt());
+                else if(path.substring(0, 17) == "inverter/histyod/")
+                    getInverterHistyod(root, request->url().substring(22).toInt());
                 else
                     getNotFound(root, F("http://") + request->host() + F("/api/"));
             }
@@ -190,6 +194,8 @@ class RestApi {
             JsonObject ep = obj.createNestedObject("avail_endpoints");
             ep[F("inverter/list")]    = url + F("inverter/list");
             ep[F("inverter/id/0")]    = url + F("inverter/id/0");
+            ep[F("inverter/history/0")] = url + F("inverter/history/0");
+            ep[F("inverter/histyod/0")] = url + F("inverter/histyod/0");
             ep[F("inverter/alarm/0")] = url + F("inverter/alarm/0");
             ep[F("inverter/version/0")] = url + F("inverter/version/0");
             ep[F("generic")]          = url + F("generic");
@@ -526,6 +532,89 @@ class RestApi {
 
             obj[F("name")] = String(iv->config->name);
             obj[F("grid")] = iv->getGridProfile();
+        }
+
+        void getInverterHistyod(JsonObject obj, uint8_t id) {
+            Inverter<> *iv = mSys->getInverterByPos(id);
+            if (NULL == iv) {
+                obj[F("error")] = F("inverter not found!");
+                return;
+            }
+
+            if (!iv->historyMeas.initialized){
+                obj[F("error")] = F("no history available!");
+                return;
+            }
+
+            obj[F("ch_name")] = "AC";
+            obj[F("len")] = iv->historyMeas.yod_len;
+
+            uint16_t n_end = iv->historyMeas.yod_len; //stable copy
+            uint16_t idx = iv->historyMeas.yod_idx; //stable copy
+            JsonArray ts = obj.createNestedArray("utc");
+            JsonArray yod = obj.createNestedArray("yod");
+            for (uint16_t n = 0; n < n_end; n++){
+                uint16_t idx_n = (idx + n) % iv->historyMeas.yod_idx_max;
+                ts[n] = iv->historyMeas.ts_yod[idx_n];
+                yod[n] = iv->historyMeas.yod[idx_n];
+            }
+        }
+
+        void getInverterHistory(JsonObject obj, uint8_t id, uint8_t chunk) {
+            Inverter<> *iv = mSys->getInverterByPos(id);
+            if (NULL == iv) {
+                obj[F("error")] = F("inverter not found!");
+                return;
+            }
+
+            if (!iv->historyMeas.initialized){
+                obj[F("error")] = F("no history available!");
+                return;
+            }//chunk too high --> sorted out below (n_end)
+
+            if (chunk == 0){
+                obj[F("iv_name")] = String(iv->config->name);
+                obj[F("id")] = id;
+
+                //channel info for AC & n*DC:
+                obj[F("ch_name")][0] = "AC";
+                obj[F("ch_max_pwr")][0] = iv->getMaxPower();
+
+                for(uint8_t ch = 1; (ch <= iv->channels) && (ch < iv->historyMeas.ch_num); ch ++) {
+                    obj[F("ch_name")][ch] = iv->config->chName[ch-1];
+                    obj[F("ch_max_pwr")][ch] = iv->config->chMaxPwr[ch-1];
+                }
+                obj[F("chunk_size")] = iv->historyMeas.chunk_size;
+                obj[F("len")] = iv->historyMeas.len;
+                obj[F("avg")] = iv->historyMeas.avg_time;
+            }
+
+            //prepare start and end
+            uint16_t n_start = (uint16_t)chunk*iv->historyMeas.chunk_size;
+            uint16_t n_end = n_start + iv->historyMeas.chunk_size;
+            if (n_end >= iv->historyMeas.len){
+                n_end = iv->historyMeas.len; //stable copy
+            }
+            uint16_t idx = iv->historyMeas.idx; //stable copy
+
+            // print timestamps
+            JsonArray ts = obj.createNestedArray("utc");
+            uint16_t i = 0;
+            for (uint16_t n = n_start; n < n_end; n++){
+                uint16_t idx_n = (idx + n) % iv->historyMeas.idx_max;
+                ts[i++] = iv->historyMeas.ts[idx_n];
+            }
+
+            // print data for AC & n*DC
+            JsonArray data = obj.createNestedArray("power");
+            for (uint8_t ch = 0; (ch <= iv->channels) && (ch < iv->historyMeas.ch_num); ch++) {
+                JsonArray data_ch = data.createNestedArray();
+                i = 0;
+                for (uint16_t n = n_start; n < n_end; n++){
+                    uint16_t idx_n = (idx + n) % iv->historyMeas.idx_max;
+                    data_ch[i++] = iv->historyMeas.ch[ch][idx_n];
+                }
+            }
         }
 
         void getIvAlarms(JsonObject obj, uint8_t id) {

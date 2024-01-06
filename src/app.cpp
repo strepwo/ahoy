@@ -324,6 +324,8 @@ void app::tickMidnight(void) {
                 iv->setValue(pos, rec, 0.0f);
             }
         }
+
+        iv->historyMidnight(mTimestamp);
     }
 
     if (mConfig->inst.rstYieldMidNight) {

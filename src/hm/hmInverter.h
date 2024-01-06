@@ -88,6 +88,32 @@ struct record_t {
     MqttSentStatus mqttSentStatus; // indicates the current MqTT sent status
 };
 
+template<class T=float>
+struct history_t {
+    bool initialized;
+
+    //for short-term-averaging
+    static const uint16_t chunk_size = 64;
+    uint16_t idx_max;      //length of the time series
+    uint16_t idx;          //newest index
+    uint16_t len;          //number of valid entries
+    uint32_t ts_last;      //last arrival of data
+    uint32_t ts_avg_start; //time when averaging started
+    uint32_t avg_time;     //average for x seconds
+    static const uint8_t ch_num = 5; // history data for 1 AC and max 4 DC channels
+    float avg[ch_num];     // for averaging
+    uint16_t *ch[ch_num];  // averaged data of AC & n*DC channels, in W
+    uint32_t *ts;          // timestamps of data
+
+    //for yield of day:
+    uint16_t yod_idx;      //newest index
+    uint16_t yod_len;      //number of valid entries
+    float yt_last;         //yt from the day before
+    uint16_t yod_idx_max;  //length of the time series
+    uint16_t* yod;         //yod data for AC channel, in Wh
+    uint32_t* ts_yod;      //yod data time stamps
+};
+
 struct alarm_t {
     uint16_t code;
     uint32_t start;
@@ -128,6 +154,7 @@ class Inverter {
         record_t<REC_TYP> recordHwInfo;  // structure for simple (hardware) info values
         record_t<REC_TYP> recordConfig;  // structure for system config values
         record_t<REC_TYP> recordAlarm;   // structure for alarm values
+        history_t<REC_TYP> historyMeas;  // structure for history of some recordMeas-data (watt)
         bool          isConnected;       // shows if inverter was successfully identified (fw version and hardware info)
         InverterStatus status;           // indicates the current inverter status
         std::array<alarm_t, 10> lastAlarm; // holds last 10 alarms
@@ -235,6 +262,10 @@ class Inverter {
             initAssignment(&recordAlarm, AlarmData);
             toRadioId();
             curCmtFreq = this->config->frequency; // update to frequency read from settings
+
+            if (IV_UNKNOWN != ivGen){
+                initHistory();
+            }
         }
 
         uint8_t getPosByChFld(uint8_t channel, uint8_t fieldId, record_t<> *rec) {
@@ -504,6 +535,227 @@ class Inverter {
                 default:                       break;
             }
             return NULL;
+        }
+
+
+        void initHistory(){
+            DPRINTLN(DBG_VERBOSE, F("hmInverter.h:initHistory"));
+            bool err = false;
+            historyMeas.initialized = false;
+
+            historyMeas.yod_idx_max = 60; // 60 days
+            historyMeas.yod = nullptr; //for a potential delete
+            historyMeas.ts_yod = nullptr; //for a potential delete
+
+            historyMeas.idx_max = 150;
+            historyMeas.avg_time = 450; //average for 7.5 minutes
+            historyMeas.ts = nullptr; //for a potential delete
+            for (uint8_t ch = 0; ch < historyMeas.ch_num; ch++){
+                historyMeas.ch[ch] =  nullptr; //for a potential delete
+            }
+
+            if ((channels > 0) && (ESP.getFreeHeap() > 50000)){
+                //timestamps
+                historyMeas.ts_yod = new uint32_t[historyMeas.yod_idx_max];
+                if (historyMeas.ts_yod == nullptr){
+                    err = true;
+                }
+
+                historyMeas.yod = new uint16_t[historyMeas.yod_idx_max];
+                if (historyMeas.yod == nullptr){
+                    err = true;
+                }
+
+                //timestamps
+                historyMeas.ts = new uint32_t[historyMeas.idx_max];
+                if (historyMeas.ts == nullptr){
+                    err = true;
+                }
+
+                //channels
+                for (uint8_t ch = 0; (ch <= channels) && (ch < historyMeas.ch_num); ch++) {
+                    historyMeas.ch[ch] = new uint16_t[historyMeas.idx_max];
+                    if (historyMeas.ch[ch] == nullptr){
+                        err = true;
+                        break;
+                    }
+                }
+
+                if (err){
+                    if (historyMeas.ts_yod != nullptr){
+                        delete(historyMeas.ts_yod);
+                    }
+
+                    if (historyMeas.yod != nullptr){
+                        delete(historyMeas.yod);
+                    }
+
+                    if (historyMeas.ts != nullptr){
+                        delete(historyMeas.ts);
+                    }
+
+                    for (uint8_t ch = 0; ch < historyMeas.ch_num; ch++) {
+                        if (historyMeas.ch[ch] != nullptr){
+                            delete(historyMeas.ch[ch]);
+                        }
+                    }
+                    DPRINTLN(DBG_ERROR, F("not enough RAM for history!"));
+                }else{
+                    resetHistory();
+                    historyMeas.initialized = true;
+                }
+            }
+        }
+
+        void resetHistory(){
+            DPRINTLN(DBG_VERBOSE, F("addHistory:resetHistory"));
+
+            historyMeas.yod_idx = 0;
+            historyMeas.yt_last = 0;
+            historyMeas.yod[0] = 0;
+            historyMeas.ts_yod[0] = 0;
+            historyMeas.yod_len = 1; //for live data
+
+            historyMeas.idx = 0;
+            historyMeas.len = 0;
+            historyMeas.ts_last = 0;
+            for (uint8_t ch = 0; ch < historyMeas.ch_num; ch++) {
+                historyMeas.avg[ch] = 0;
+            }
+        }
+
+        void addHistory() {
+            DPRINTLN(DBG_VERBOSE, F("hmInverter.h:addHistory"));
+            if (!historyMeas.initialized){
+                return;
+            }
+            record_t<> *rec = &recordMeas;
+            uint32_t ts_now = rec->ts;
+
+            //update yod:
+            uint16_t yod_idx = historyMeas.yod_idx;
+            uint8_t pos = getPosByChFld(CH0, FLD_YD, rec);
+            REC_TYP yod = (0xff != pos) ? getValue(pos, rec) : 0.0;
+            if (yod > historyMeas.yod[yod_idx]){
+                historyMeas.yod[yod_idx] = yod + 0.5f; //Wh
+                historyMeas.ts_yod[yod_idx] = ts_now;
+            }
+
+            //check timestamp
+            if (historyMeas.ts_last == 0){
+                //special case: init
+                historyMeas.ts_last = ts_now;
+                historyMeas.ts_avg_start = ts_now;
+                return;
+            }
+
+            int32_t d_ts_last = ts_now - historyMeas.ts_last;
+            if (abs(d_ts_last) > 10*24*3600){
+                //timebase was changed
+                resetHistory();
+                return;
+            }
+
+            if (d_ts_last <= 0){
+                //no new data
+                return;
+            }
+
+            //add new data to average
+            uint32_t d_ts_avg_start = ts_now - historyMeas.ts_avg_start;
+            if (d_ts_avg_start < 2*historyMeas.avg_time){
+                //add AC data to average
+                uint8_t pos = getPosByChFld(CH0, FLD_PAC, rec);
+                REC_TYP power = (0xff != pos) ? getValue(pos, rec) : 0.0;
+                historyMeas.avg[0] += d_ts_last*power;
+
+                //add DC data to average
+                for (uint8_t ch = 1; (ch <= channels) && (ch < historyMeas.ch_num); ch++) {
+                    pos = getPosByChFld(ch, FLD_PDC, rec);
+                    power = (0xff != pos) ? getValue(pos, rec) : 0.0;
+                    historyMeas.avg[ch] += d_ts_last*power;
+                }
+            }else{
+                //no data for quite some time: force finishing, without adding actual data
+                d_ts_avg_start = historyMeas.avg_time;
+            }
+
+            //check time
+            if (d_ts_avg_start >= historyMeas.avg_time){
+                //time is up:
+                if (historyMeas.avg[0] > 0){
+                    //switch to next position
+                    uint16_t idx = historyMeas.idx;
+                    if (idx > 0){
+                        idx--;
+                    }else{
+                        idx = historyMeas.idx_max - 1;
+                    }
+
+                    //AC power > 0: finalize averaging
+                    for (uint8_t ch = 0; (ch <= channels) && (ch < historyMeas.ch_num); ch++) {
+                        float val = historyMeas.avg[ch]/d_ts_avg_start; // in watt
+                        if (val > 65535.0){
+                            val = 65535.0;
+                        }
+                        historyMeas.ch[ch][idx] = val + 0.5;
+                    }
+
+                    //set timestamp to the start of the averaging period
+                    historyMeas.ts[idx] = historyMeas.ts_avg_start;
+
+                    historyMeas.idx = idx; //now this data can be read
+
+                    if (historyMeas.len < (historyMeas.idx_max - 1)){
+                         //idx_max - 1: avoid reading the last entry, because it could be written at the same time
+                        historyMeas.len++;
+                    }
+                }//else: AC power = 0 --> makes no sense to store it
+
+                //prepare next averaging cycle
+                for (uint8_t ch = 0; ch < historyMeas.ch_num; ch++) {
+                    historyMeas.avg[ch] = 0;
+                }
+                historyMeas.ts_avg_start = ts_now;
+            }
+
+            historyMeas.ts_last = ts_now;
+        }
+
+
+        void historyMidnight(uint32_t utc){
+            DPRINTLN(DBG_VERBOSE, F("hmInverter.h:historyMidnight"));
+            if (!historyMeas.initialized){
+                return;
+            }
+            uint16_t yod_idx = historyMeas.yod_idx;
+
+            //replace yod by the more reliable change of yt
+            record_t<> *rec = &recordMeas;
+            uint8_t pos = getPosByChFld(CH0, FLD_YT, rec);
+            if (0xff != pos){
+                REC_TYP yt = getValue(pos, rec);
+                if (historyMeas.yt_last > 0){
+                    historyMeas.yod[yod_idx] = 1000*(yt - historyMeas.yt_last) + 0.5; //kWh to Wh
+                }
+                historyMeas.yt_last = yt;
+            }
+
+            if (historyMeas.yod[yod_idx] > 0){
+                //prepare next entry
+                if (yod_idx > 0){
+                    yod_idx--;
+                }else{
+                    yod_idx = historyMeas.yod_idx_max - 1;
+                }
+                historyMeas.yod[yod_idx] = 0;
+                historyMeas.ts_yod[yod_idx] = utc + 43200;//high noon
+                historyMeas.yod_idx = yod_idx;
+
+                if (historyMeas.yod_len < (historyMeas.yod_idx_max - 1)){
+                    historyMeas.yod_len++;
+                }
+            }
         }
 
         void initAssignment(record_t<> *rec, uint8_t cmd) {
