@@ -536,13 +536,16 @@ class RestApi {
 
         void getInverterHistyod(JsonObject obj, uint8_t id) {
             Inverter<> *iv = mSys->getInverterByPos(id);
-            if (NULL == iv) {
-                obj[F("error")] = F("inverter not found!");
-                return;
-            }
 
-            if (!iv->historyMeas.initialized){
-                obj[F("error")] = F("no history available!");
+            uint16_t error = 0;
+            if (NULL == iv) {
+                error = 2;
+            }else if (!iv->historyMeas.initialized){
+                error = 1;
+            }
+            obj[F("error")] = error;
+
+            if (error != 0){
                 return;
             }
 
@@ -562,15 +565,18 @@ class RestApi {
 
         void getInverterHistory(JsonObject obj, uint8_t id, uint8_t chunk) {
             Inverter<> *iv = mSys->getInverterByPos(id);
+
+            uint16_t error = 0;
             if (NULL == iv) {
-                obj[F("error")] = F("inverter not found!");
+                error = 2;
+            }else if (!iv->historyMeas.initialized){
+                error = 1;
+            }
+            obj[F("error")] = error;
+
+            if (error != 0){
                 return;
             }
-
-            if (!iv->historyMeas.initialized){
-                obj[F("error")] = F("no history available!");
-                return;
-            }//chunk too high --> sorted out below (n_end)
 
             if (chunk == 0){
                 obj[F("iv_name")] = String(iv->config->name);

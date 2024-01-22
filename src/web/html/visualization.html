@@ -432,13 +432,17 @@
 
             function parseIvHistory(obj) {
                 let html = [];
-                let el1 = ml("canvas", {id: "myCanvas", width: "600", height: "250"});
-                html.push(el1);
-                plotIvHistory(obj,el1.getContext("2d"));
-                let el2 = ml("canvas", {id: "histyod", width: "600", height: "200"});
-                html.push(el2);
-                plotIvHistyod(obj,el2.getContext("2d"));
-                modal("History of inverter " + obj.iv_name, ml("div", {}, html));
+				if (obj.error == 0){
+					let el1 = ml("canvas", {id: "myCanvas", width: "600", height: "250"});
+					html.push(el1);
+					plotIvHistory(obj,el1.getContext("2d"));
+					let el2 = ml("canvas", {id: "histyod", width: "600", height: "200"});
+					html.push(el2);
+					plotIvHistyod(obj,el2.getContext("2d"));
+					modal("History of inverter " + obj.iv_name, ml("div", {}, html));
+				}else{
+					modal("History not available, error: " + obj.error, ml("div", {}, html));
+				}
             }
 
             function parseIvVersion(obj) {
