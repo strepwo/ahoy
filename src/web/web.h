@@ -37,6 +37,7 @@
 #include "html/h/visualization_html.h"
 #include "html/h/about_html.h"
 #include "html/h/wizard_html.h"
+#include "html/h/history_html.h"
 
 #define WEB_SERIAL_BUF_SIZE 2048
 
@@ -82,6 +83,7 @@ class Web {
             mWeb.on("/save",           HTTP_POST, std::bind(&Web::showSave,       this, std::placeholders::_1));
 
             mWeb.on("/live",           HTTP_ANY,  std::bind(&Web::onLive,         this, std::placeholders::_1));
+            mWeb.on("/history",        HTTP_ANY, std::bind(&Web::onHistory,       this, std::placeholders::_1));
 
         #ifdef ENABLE_PROMETHEUS_EP
             mWeb.on("/metrics",        HTTP_ANY,  std::bind(&Web::showMetrics,    this, std::placeholders::_1));
@@ -251,6 +253,8 @@ class Web {
                 request->redirect(F("/index"));
             else if ((mConfig->sys.protectionMask & PROT_MASK_LIVE) != PROT_MASK_LIVE)
                 request->redirect(F("/live"));
+            else if ((mConfig->sys.protectionMask & PROT_MASK_HISTORY) != PROT_MASK_HISTORY)
+                request->redirect(F("/history"));
             else if ((mConfig->sys.protectionMask & PROT_MASK_SERIAL) != PROT_MASK_SERIAL)
                 request->redirect(F("/serial"));
             else if ((mConfig->sys.protectionMask & PROT_MASK_SYSTEM) != PROT_MASK_SYSTEM)
@@ -266,7 +270,7 @@ class Web {
             }
         }
 
-        void getPage(AsyncWebServerRequest *request, uint8_t mask, const uint8_t *zippedHtml, uint32_t len) {
+        void getPage(AsyncWebServerRequest *request, uint16_t mask, const uint8_t *zippedHtml, uint32_t len) {
             if (CHECK_MASK(mConfig->sys.protectionMask, mask))
                 checkProtection(request);
 
@@ -478,13 +482,22 @@ class Web {
             mConfig->sys.darkMode = (request->arg("darkMode") == "on");
             mConfig->sys.schedReboot = (request->arg("schedReboot") == "on");
 
+
+            if (request->arg("cstLnk") != "") {
+                request->arg("cstLnk").toCharArray(mConfig->plugin.customLink, MAX_CUSTOM_LINK_LEN);
+                request->arg("cstLnkTxt").toCharArray(mConfig->plugin.customLinkText, MAX_CUSTOM_LINK_TEXT_LEN);
+            } else {
+                mConfig->plugin.customLink[0] = '\0';
+                mConfig->plugin.customLinkText[0] = '\0';
+            }
+
             // protection
             if (request->arg("adminpwd") != "{PWD}") {
                 request->arg("adminpwd").toCharArray(mConfig->sys.adminPwd, PWD_LEN);
                 mProtected = (strlen(mConfig->sys.adminPwd) > 0);
             }
             mConfig->sys.protectionMask = 0x0000;
-            for (uint8_t i = 0; i < 6; i++) {
+            for (uint8_t i = 0; i < 7; i++) {
                 if (request->arg("protMask" + String(i)) == "on")
                     mConfig->sys.protectionMask |= (1 << i);
             }
@@ -583,17 +596,32 @@ class Web {
 
             // display
             mConfig->plugin.display.pwrSaveAtIvOffline = (request->arg("disp_pwr") == "on");
-            mConfig->plugin.display.screenSaver = request->arg("disp_screensaver").toInt();
-            mConfig->plugin.display.rot        = request->arg("disp_rot").toInt();
-            mConfig->plugin.display.type       = request->arg("disp_typ").toInt();
-            mConfig->plugin.display.contrast   = (mConfig->plugin.display.type == 0) ? 60 : request->arg("disp_cont").toInt();
-            mConfig->plugin.display.disp_data  = (mConfig->plugin.display.type == 0) ? DEF_PIN_OFF : request->arg("disp_data").toInt();
-            mConfig->plugin.display.disp_clk   = (mConfig->plugin.display.type == 0) ? DEF_PIN_OFF : request->arg("disp_clk").toInt();
-            mConfig->plugin.display.disp_cs    = (mConfig->plugin.display.type < 3)  ? DEF_PIN_OFF : request->arg("disp_cs").toInt();
-            mConfig->plugin.display.disp_reset = (mConfig->plugin.display.type < 3)  ? DEF_PIN_OFF : request->arg("disp_rst").toInt();
-            mConfig->plugin.display.disp_dc    = (mConfig->plugin.display.type < 3)  ? DEF_PIN_OFF : request->arg("disp_dc").toInt();
-            mConfig->plugin.display.disp_busy  = (mConfig->plugin.display.type < 10) ? DEF_PIN_OFF : request->arg("disp_bsy").toInt();
-            mConfig->plugin.display.pirPin     = request->arg("pir_pin").toInt();
+            mConfig->plugin.display.graph_size  = request->arg("disp_graph_size").toInt();
+            mConfig->plugin.display.rot         = request->arg("disp_rot").toInt();
+            mConfig->plugin.display.type        = request->arg("disp_typ").toInt();
+            mConfig->plugin.display.contrast    = (mConfig->plugin.display.type  == DISP_TYPE_T0_NONE) ||   // contrast available only according optionsMap in setup.html, otherwise default value
+                                                  (mConfig->plugin.display.type  == DISP_TYPE_T10_EPAPER) ? 140 : request->arg("disp_cont").toInt();
+            mConfig->plugin.display.screenSaver = ((mConfig->plugin.display.type == DISP_TYPE_T1_SSD1306_128X64) // screensaver available only according optionsMap in setup.html, otherwise default value
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T2_SH1106_128X64)
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T4_SSD1306_128X32)
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T5_SSD1306_64X48)
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T6_SSD1309_128X64)) ? request->arg("disp_screensaver").toInt() : 0;
+            mConfig->plugin.display.graph_ratio = ((mConfig->plugin.display.type == DISP_TYPE_T1_SSD1306_128X64) // display graph available only according optionsMap in setup.html, otherwise has to be 0
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T2_SH1106_128X64)
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T3_PCD8544_84X48)
+                                                || (mConfig->plugin.display.type == DISP_TYPE_T6_SSD1309_128X64)) ? request->arg("disp_graph_ratio").toInt() : 0;
+
+                                                                                           // available pins according pinMap in setup.html, otherwise default value
+            mConfig->plugin.display.disp_data   = (mConfig->plugin.display.type == DISP_TYPE_T0_NONE) ? DEF_PIN_OFF : request->arg("disp_data").toInt();
+            mConfig->plugin.display.disp_clk    = (mConfig->plugin.display.type == DISP_TYPE_T0_NONE) ? DEF_PIN_OFF : request->arg("disp_clk").toInt();
+            mConfig->plugin.display.disp_cs     = (mConfig->plugin.display.type != DISP_TYPE_T3_PCD8544_84X48)
+                                               && (mConfig->plugin.display.type != DISP_TYPE_T10_EPAPER) ? DEF_PIN_OFF : request->arg("disp_cs").toInt();
+            mConfig->plugin.display.disp_dc     = (mConfig->plugin.display.type != DISP_TYPE_T3_PCD8544_84X48)
+                                               && (mConfig->plugin.display.type != DISP_TYPE_T10_EPAPER) ? DEF_PIN_OFF : request->arg("disp_dc").toInt();
+            mConfig->plugin.display.disp_reset  = (mConfig->plugin.display.type != DISP_TYPE_T10_EPAPER) ? DEF_PIN_OFF : request->arg("disp_rst").toInt();
+            mConfig->plugin.display.disp_busy   = (mConfig->plugin.display.type != DISP_TYPE_T10_EPAPER) ? DEF_PIN_OFF : request->arg("disp_bsy").toInt();
+            mConfig->plugin.display.pirPin      = (mConfig->plugin.display.screenSaver != DISP_TYPE_T2_SH1106_128X64) ? DEF_PIN_OFF : request->arg("pir_pin").toInt(); // pir pin only for motion screensaver
+                                                                                                                                              // otherweise default value
 
             mApp->saveSettings((request->arg("reboot") == "on"));
 
@@ -604,6 +632,10 @@ class Web {
 
         void onLive(AsyncWebServerRequest *request) {
             getPage(request, PROT_MASK_LIVE, visualization_html, visualization_html_len);
+        }
+
+        void onHistory(AsyncWebServerRequest *request) {
+            getPage(request, PROT_MASK_HISTORY, history_html, history_html_len);
         }
 
         void onAbout(AsyncWebServerRequest *request) {
@@ -796,10 +828,9 @@ class Web {
                                             if (0 == channel) {
                                                 // Report a _total value if also channel values were reported. Otherwise report without _total
                                                 char total[7];
-                                                total[0] = 0;
                                                 if (metricDeclared) {
                                                     // A declaration and value for channels have been delivered. So declare and deliver a _total metric
-                                                    strncpy(total,"_total",sizeof(total));
+                                                    strncpy(total, "_total", 6);
                                                 }
                                                 if (!metricTotalDeclard) {
                                                     snprintf(type, sizeof(type), "# TYPE %s%s%s%s %s\n",metricConstPrefix, iv->getFieldName(metricsChannelId, rec), promUnit.c_str(), total, promType.c_str());

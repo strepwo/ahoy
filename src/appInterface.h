@@ -1,5 +1,5 @@
 //-----------------------------------------------------------------------------
-// 2022 Ahoy, https://ahoydtu.de
+// 2024 Ahoy, https://ahoydtu.de
 // Creative Commons - https://creativecommons.org/licenses/by-nc-sa/4.0/deed
 //-----------------------------------------------------------------------------
 
@@ -7,16 +7,10 @@
 #define __IAPP_H__
 
 #include "defines.h"
-#include "hm/hmSystem.h"
 #if defined(ETHERNET)
 #include "AsyncWebServer_ESP32_W5500.h"
 #else
 #include "ESPAsyncWebServer.h"
-#endif
-
-//#include "hms/hmsRadio.h"
-#if defined(ESP32)
-//typedef CmtRadio<esp32_3wSpi<>> CmtRadioType;
 #endif
 
 // abstract interface to App. Make members of App accessible from child class
@@ -33,6 +27,7 @@ class IApp {
         virtual bool getShouldReboot() = 0;
         virtual void setRebootFlag() = 0;
         virtual const char *getVersion() = 0;
+        virtual const char *getVersionModules() = 0;
 
         #if !defined(ETHERNET)
         virtual void scanAvailNetworks() = 0;
@@ -52,6 +47,8 @@ class IApp {
         virtual void getSchedulerInfo(uint8_t *max) = 0;
         virtual void getSchedulerNames() = 0;
 
+        virtual void triggerTickSend() = 0;
+
         virtual bool getRebootRequestState() = 0;
         virtual bool getSettingsValid() = 0;
         virtual void setMqttDiscoveryFlag() = 0;
@@ -65,8 +62,10 @@ class IApp {
 
         virtual bool getProtection(AsyncWebServerRequest *request) = 0;
 
-        virtual void* getRadioObj(bool nrf) = 0;
+        virtual uint16_t getHistoryValue(uint8_t type, uint16_t i) = 0;
+        virtual uint16_t getHistoryMaxDay() = 0;
 
+        virtual void* getRadioObj(bool nrf) = 0;
 };
 
 #endif /*__IAPP_H__*/

@@ -1,5 +1,121 @@
 # Development Changes
 
+## 0.8.65 - 2024-01-24
+* removed patch for NRF `PLOS`
+* fix lang issues #1388
+* fix build on Windows of `opendtufusion` environments (git: trailing whitespaces)
+
+## 0.8.64 - 2024-01-22
+* add `ARC` to log (NRF24 Debug)
+* merge PR: ETH NTP update bugfix #1385
+
+## 0.8.63 - 2024-01-22
+* made code review
+* fixed endless loop #1387
+
+## 0.8.62 - 2024-01-21
+* updated version in footer #1381
+* repaired radio statistics #1382
+
+## 0.8.61 - 2024-01-21
+* add favicon to header
+* improved NRF communication
+* merge PR: provide localized times to display mono classes #1376
+* merge PR: Bypass OOM-Crash on minimal version & history access #1378
+* merge PR: Add some REST Api Endpoints to avail_endpoints #1380
+
+## 0.8.60 - 2024-01-20
+* merge PR: non blocking nRF loop #1371
+* merge PR: fixed millis in serial log #1373
+* merge PR: fix powergraph scale #1374
+* changed inverter gap to `1` as default (old settings will be overridden)
+
+## 0.8.59 - 2024-01-18
+* merge PR: solve display settings dependencies #1369
+* fix language typos #1346
+* full update of ePaper after booting #1107
+* fix MqTT yield day reset even if `pause inverter during nighttime` isn't active #1368
+
+## 0.8.58 - 2024-01-17
+* fix missing refresh URL #1366
+* fix view of grid profile #1365
+* fix webUI translation #1346
+* fix protection mask #1352
+* merge PR: Add Watchdog for ESP32 #1367
+* merge PR: ETH support for CMT2300A - HMS/HMT #1356
+* full refresh of ePaper after booting #1107
+* add optional custom link #1199
+* pinout has an own subgroup in `/settings`
+* grid profile will be displayed as hex in every case #1199
+
+## 0.8.57 - 2024-01-15
+* merge PR: fix immediate clearing of display after sunset #1364
+* merge PR: MI-MQTT and last retransmit #1363
+* fixed DTU-ID, now built from the unique part of the MAC
+* fix lang in `/system` #1346
+* added protection to prevent update to wrong firmware (environment check)
+
+## 0.8.56 - 2024-01-15
+* potential fix of update problems and random reboots #1359 #1354
+
+## 0.8.55 - 2024-01-14
+* merge PR: fix reboot problem with deactivated power graph #1360
+* changed scope of variables and member functions inside display classes
+* removed automatically "minimal" builds
+* fix include of "settings.h" (was already done in #1360)
+* merge PR: Enhancement: Add info about compiled modules to version string #1357
+* add info about installed binary to `/update` #1353
+* fix lang in `/system` #1346
+
+## 0.8.54 - 2024-01-13
+* added minimal version (without: MqTT, Display, History), WebUI is not changed!
+* added simulator (must be activated before compile, standard: off)
+* changed communication attempts back to 5
+
+## 0.8.53 - 2024-01-12
+* fix history graph
+* fix MqTT yield day #1331
+
+## 0.8.52 - 2024-01-11
+* possible fix of 'division by zero' #1345
+* fix lang #1348 #1346
+* fix timestamp `max AC power` #1324
+* fix stylesheet overlay `max AC power` #1324
+* fix download link #1340
+* fix history graph
+* try to fix #1331
+
+## 0.8.51 - 2024-01-10
+* fix translation #1346
+* further improve sending active power control command faster #1332
+* added history protection mask
+* merge PR: display graph improvements #1347
+
+## 0.8.50 - 2024-01-09
+* merge PR: added history charts to web #1336
+* merge PR: small display changes #1339
+* merge PR: MI - add "get loss logic" #1341
+* translated `/history`
+* fix translations in title of documents
+* added translations for error messages #1343
+
+## 0.8.49 - 2024-01-08
+* fix send total values if inverter state is different from `OFF` #1331
+* fix german language issues #1335
+
+## 0.8.48 - 2024-01-07
+* merge PR: pin selection for ESP-32 S2 #1334
+* merge PR: enhancement: power graph display option #1330
+
+## 0.8.47 - 2024-01-06
+* reduce GxEPD2 lib to compile faster
+* upgraded GxEPD2 lib to `1.5.3`
+* updated espressif32 platform to `6.5.0`
+* updated U8g2 to `2.35.9`
+* started to convert deprecated functions of new ArduinoJson `7.0.0`
+* started to have german translations of all variants (environments) #925 #1199
+* merge PR: add defines for retry attempts #1329
+
 ## 0.8.46 - 2024-01-06
 * improved communication
 

@@ -30,7 +30,7 @@
  * https://arduino-esp8266.readthedocs.io/en/latest/filesystem.html#flash-layout
  * */
 
-#define CONFIG_VERSION      8
+#define CONFIG_VERSION      9
 
 
 #define PROT_MASK_INDEX     0x0001
@@ -39,8 +39,9 @@
 #define PROT_MASK_SETUP     0x0008
 #define PROT_MASK_UPDATE    0x0010
 #define PROT_MASK_SYSTEM    0x0020
-#define PROT_MASK_API       0x0040
-#define PROT_MASK_MQTT      0x0080
+#define PROT_MASK_HISTORY   0x0040
+#define PROT_MASK_API       0x0080
+#define PROT_MASK_MQTT      0x0100
 
 #define DEF_PROT_INDEX      0x0001
 #define DEF_PROT_LIVE       0x0000
@@ -48,6 +49,7 @@
 #define DEF_PROT_SETUP      0x0008
 #define DEF_PROT_UPDATE     0x0010
 #define DEF_PROT_SYSTEM     0x0020
+#define DEF_PROT_HISTORY    0x0000
 #define DEF_PROT_API        0x0000
 #define DEF_PROT_MQTT       0x0000
 
@@ -165,6 +167,8 @@ typedef struct {
     uint8_t type;
     bool pwrSaveAtIvOffline;
     uint8_t screenSaver;
+    uint8_t graph_ratio;
+    uint8_t graph_size;
     uint8_t rot;
     //uint16_t wakeUp;
     //uint16_t sleepAt;
@@ -180,6 +184,8 @@ typedef struct {
 
 typedef struct {
     display_t display;
+    char customLink[MAX_CUSTOM_LINK_LEN];
+    char customLinkText[MAX_CUSTOM_LINK_TEXT_LEN];
 } plugins_t;
 
 typedef struct {
@@ -308,18 +314,18 @@ class settings {
             DynamicJsonDocument json(MAX_ALLOWED_BUF_SIZE);
             JsonObject root = json.to<JsonObject>();
             json[F("version")] = CONFIG_VERSION;
-            jsonNetwork(root.createNestedObject(F("wifi")), true);
-            jsonNrf(root.createNestedObject(F("nrf")), true);
+            jsonNetwork(root[F("wifi")].to<JsonObject>(), true);
+            jsonNrf(root[F("nrf")].to<JsonObject>(), true);
             #if defined(ESP32)
-            jsonCmt(root.createNestedObject(F("cmt")), true);
+            jsonCmt(root[F("cmt")].to<JsonObject>(), true);
             #endif
-            jsonNtp(root.createNestedObject(F("ntp")), true);
-            jsonSun(root.createNestedObject(F("sun")), true);
-            jsonSerial(root.createNestedObject(F("serial")), true);
-            jsonMqtt(root.createNestedObject(F("mqtt")), true);
-            jsonLed(root.createNestedObject(F("led")), true);
-            jsonPlugin(root.createNestedObject(F("plugin")), true);
-            jsonInst(root.createNestedObject(F("inst")), true);
+            jsonNtp(root[F("ntp")].to<JsonObject>(), true);
+            jsonSun(root[F("sun")].to<JsonObject>(), true);
+            jsonSerial(root[F("serial")].to<JsonObject>(), true);
+            jsonMqtt(root[F("mqtt")].to<JsonObject>(), true);
+            jsonLed(root[F("led")].to<JsonObject>(), true);
+            jsonPlugin(root[F("plugin")].to<JsonObject>(), true);
+            jsonInst(root[F("inst")].to<JsonObject>(), true);
 
             DPRINT(DBG_INFO, F("memory usage: "));
             DBGPRINTLN(String(json.memoryUsage()));
@@ -373,7 +379,7 @@ class settings {
             // erase all settings and reset to default
             memset(&mCfg, 0, sizeof(settings_t));
             mCfg.sys.protectionMask = DEF_PROT_INDEX | DEF_PROT_LIVE | DEF_PROT_SERIAL | DEF_PROT_SETUP
-                                    | DEF_PROT_UPDATE | DEF_PROT_SYSTEM | DEF_PROT_API | DEF_PROT_MQTT;
+                                    | DEF_PROT_UPDATE | DEF_PROT_SYSTEM | DEF_PROT_API | DEF_PROT_MQTT | DEF_PROT_HISTORY;
             mCfg.sys.darkMode = false;
             mCfg.sys.schedReboot = false;
             // restore temp settings
@@ -442,7 +448,7 @@ class settings {
             mCfg.inst.startWithoutTime = false;
             mCfg.inst.rstMaxValsMidNight = false;
             mCfg.inst.yieldEffiency    = 1.0f;
-            mCfg.inst.gapMs            = 500;
+            mCfg.inst.gapMs            = 1;
             mCfg.inst.readGrid         = true;
 
             for(uint8_t i = 0; i < MAX_NUM_INVERTERS; i++) {
@@ -459,8 +465,10 @@ class settings {
             mCfg.led.luminance   = 255;
 
             mCfg.plugin.display.pwrSaveAtIvOffline = false;
-            mCfg.plugin.display.contrast = 60;
+            mCfg.plugin.display.contrast = 140;
             mCfg.plugin.display.screenSaver = 1;  // default: 1 .. pixelshift for OLED for downward compatibility
+            mCfg.plugin.display.graph_ratio = 0;
+            mCfg.plugin.display.graph_size  = 2;
             mCfg.plugin.display.rot = 0;
             mCfg.plugin.display.disp_data  = DEF_PIN_OFF; // SDA
             mCfg.plugin.display.disp_clk   = DEF_PIN_OFF; // SCL
@@ -468,7 +476,7 @@ class settings {
             mCfg.plugin.display.disp_reset = DEF_PIN_OFF;
             mCfg.plugin.display.disp_busy  = DEF_PIN_OFF;
             mCfg.plugin.display.disp_dc    = DEF_PIN_OFF;
-            mCfg.plugin.display.pirPin     = DEF_MOTION_SENSOR_PIN;
+            mCfg.plugin.display.pirPin     = DEF_PIN_OFF;
         }
 
         void loadAddedDefaults() {
@@ -500,6 +508,9 @@ class settings {
                 }
                 if(mCfg.configVersion < 8) {
                     mCfg.sun.offsetSecEvening = mCfg.sun.offsetSecMorning;
+                }
+                if(mCfg.configVersion < 9) {
+                    mCfg.inst.gapMs = 1;
                 }
             }
         }
@@ -551,7 +562,7 @@ class settings {
 
                 if(mCfg.sys.protectionMask == 0)
                     mCfg.sys.protectionMask = DEF_PROT_INDEX | DEF_PROT_LIVE | DEF_PROT_SERIAL | DEF_PROT_SETUP
-                                            | DEF_PROT_UPDATE | DEF_PROT_SYSTEM | DEF_PROT_API | DEF_PROT_MQTT;
+                                            | DEF_PROT_UPDATE | DEF_PROT_SYSTEM | DEF_PROT_API | DEF_PROT_MQTT | DEF_PROT_HISTORY;
             }
         }
 
@@ -697,6 +708,8 @@ class settings {
                 disp[F("type")]     = mCfg.plugin.display.type;
                 disp[F("pwrSafe")]  = (bool)mCfg.plugin.display.pwrSaveAtIvOffline;
                 disp[F("screenSaver")] = mCfg.plugin.display.screenSaver;
+                disp[F("graph_ratio")] = mCfg.plugin.display.graph_ratio;
+                disp[F("graph_size")] = mCfg.plugin.display.graph_size;
                 disp[F("rotation")] = mCfg.plugin.display.rot;
                 //disp[F("wake")] = mCfg.plugin.display.wakeUp;
                 //disp[F("sleep")] = mCfg.plugin.display.sleepAt;
@@ -708,11 +721,15 @@ class settings {
                 disp[F("busy")] = mCfg.plugin.display.disp_busy;
                 disp[F("dc")] = mCfg.plugin.display.disp_dc;
                 disp[F("pirPin")] = mCfg.plugin.display.pirPin;
+                obj[F("cst_lnk")] = mCfg.plugin.customLink;
+                obj[F("cst_lnk_txt")] = mCfg.plugin.customLinkText;
             } else {
                 JsonObject disp = obj["disp"];
                 getVal<uint8_t>(disp, F("type"), &mCfg.plugin.display.type);
                 getVal<bool>(disp, F("pwrSafe"), &mCfg.plugin.display.pwrSaveAtIvOffline);
                 getVal<uint8_t>(disp, F("screenSaver"), &mCfg.plugin.display.screenSaver);
+                getVal<uint8_t>(disp, F("graph_ratio"), &mCfg.plugin.display.graph_ratio);
+                getVal<uint8_t>(disp, F("graph_size"), &mCfg.plugin.display.graph_size);
                 getVal<uint8_t>(disp, F("rotation"), &mCfg.plugin.display.rot);
                 //mCfg.plugin.display.wakeUp = disp[F("wake")];
                 //mCfg.plugin.display.sleepAt = disp[F("sleep")];
@@ -724,6 +741,8 @@ class settings {
                 getVal<uint8_t>(disp, F("busy"), &mCfg.plugin.display.disp_busy);
                 getVal<uint8_t>(disp, F("dc"), &mCfg.plugin.display.disp_dc);
                 getVal<uint8_t>(disp, F("pirPin"), &mCfg.plugin.display.pirPin);
+                getChar(obj, F("cst_lnk"), mCfg.plugin.customLink, MAX_CUSTOM_LINK_LEN);
+                getChar(obj, F("cst_lnk_txt"), mCfg.plugin.customLinkText, MAX_CUSTOM_LINK_TEXT_LEN);
             }
         }
 
@@ -805,8 +824,10 @@ class settings {
 
     #if defined(ESP32)
         void getChar(JsonObject obj, const char *key, char *dst, int maxLen) {
-            if(obj.containsKey(key))
+            if(obj.containsKey(key)) {
                 snprintf(dst, maxLen, "%s", obj[key].as<const char*>());
+                dst[maxLen-1] = '\0';
+            }
         }
 
         template<typename T=uint8_t>
@@ -816,8 +837,10 @@ class settings {
         }
     #else
         void getChar(JsonObject obj, const __FlashStringHelper *key, char *dst, int maxLen) {
-            if(obj.containsKey(key))
+            if(obj.containsKey(key)) {
                 snprintf(dst, maxLen, "%s", obj[key].as<const char*>());
+                dst[maxLen-1] = '\0';
+            }
         }
 
         template<typename T=uint8_t>

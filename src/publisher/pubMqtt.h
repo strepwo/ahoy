@@ -8,6 +8,7 @@
 #ifndef __PUB_MQTT_H__
 #define __PUB_MQTT_H__
 
+#if defined(ENABLE_MQTT)
 #ifdef ESP8266
     #include <ESP8266WiFi.h>
 #elif defined(ESP32)
@@ -43,7 +44,6 @@ class PubMqtt {
             memset(mLastIvState, (uint8_t)InverterStatus::OFF, MAX_NUM_INVERTERS);
             memset(mIvLastRTRpub, 0, MAX_NUM_INVERTERS * 4);
             mLastAnyAvail = false;
-            mZeroValues = false;
         }
 
         ~PubMqtt() { }
@@ -70,8 +70,8 @@ class PubMqtt {
 
             if(strlen(mCfgMqtt->clientId) > 0)
                 snprintf(mClientId, 23, "%s", mCfgMqtt->clientId);
-            else{
-                snprintf(mClientId, 24, "%s-", mDevName);
+            else {
+                snprintf(mClientId, 23, "%s-", mDevName);
                 uint8_t pos = strlen(mClientId);
                 mClientId[pos++] = WiFi.macAddress().substring( 9, 10).c_str()[0];
                 mClientId[pos++] = WiFi.macAddress().substring(10, 11).c_str()[0];
@@ -134,7 +134,7 @@ class PubMqtt {
             #endif
         }
 
-        bool tickerSun(uint32_t sunrise, uint32_t sunset, int16_t offsM, int16_t offsE) {
+        bool tickerSun(uint32_t sunrise, uint32_t sunset, int16_t offsM, int16_t offsE, bool isSunrise = false) {
             if (!mClient.connected())
                 return false;
 
@@ -153,11 +153,15 @@ class PubMqtt {
                 publish(mSubTopic, ((iv->commEnabled) ? dict[STR_TRUE] : dict[STR_FALSE]), true);
             }
 
-
             snprintf(mSubTopic, 32 + MAX_NAME_LENGTH, "comm_disabled");
             publish(mSubTopic, (((*mUtcTimestamp > (sunset + offsE)) || (*mUtcTimestamp < (sunrise + offsM))) ? dict[STR_TRUE] : dict[STR_FALSE]), true);
 
             return true;
+        }
+
+        void notAvailChanged(bool allNotAvail) {
+            if(!allNotAvail)
+                mSendIvData.resetYieldDay();
         }
 
         bool tickerComm(bool disabled) {
@@ -239,10 +243,6 @@ class PubMqtt {
             }
         }
 
-        void setZeroValuesEnable(void) {
-            mZeroValues = true;
-        }
-
     private:
         void onConnect(bool sessionPreset) {
             DPRINTLN(DBG_INFO, F("MQTT connected"));
@@ -308,7 +308,7 @@ class PubMqtt {
             bool limitAbs = false;
             if(len > 0) {
                 char *pyld = new char[len + 1];
-                strncpy(pyld, (const char*)payload, len);
+                memcpy(pyld, payload, len);
                 pyld[len] = '\0';
                 if(NULL == strstr(topic, "limit"))
                     root[F("val")] = atoi(pyld);
@@ -326,7 +326,7 @@ class PubMqtt {
 
             while(1) {
                 if(('/' == p[pos]) || ('\0' == p[pos])) {
-                    strncpy(tmp, p, pos);
+                    memcpy(tmp, p, pos);
                     tmp[pos] = '\0';
                     switch(elm++) {
                         case 1: root[F("path")] = String(tmp); break;
@@ -592,8 +592,7 @@ class PubMqtt {
             if(mSendList.empty())
                 return;
 
-            mSendIvData.start(mZeroValues);
-            mZeroValues = false;
+            mSendIvData.start();
             mLastAnyAvail = anyAvail;
         }
 
@@ -612,7 +611,6 @@ class PubMqtt {
         std::array<bool, MAX_NUM_INVERTERS> mSendAlarm{};
         subscriptionCb mSubscriptionCb;
         bool mLastAnyAvail;
-        bool mZeroValues;
         InverterStatus mLastIvState[MAX_NUM_INVERTERS];
         uint32_t mIvLastRTRpub[MAX_NUM_INVERTERS];
         uint16_t mIntervalTimeout;
@@ -628,4 +626,5 @@ class PubMqtt {
         discovery_t mDiscovery;
 };
 
+#endif /*ENABLE_MQTT*/
 #endif /*__PUB_MQTT_H__*/
