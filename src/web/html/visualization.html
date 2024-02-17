@@ -136,7 +136,7 @@
                                 }}, ("{#ALARMS}: " + obj.alarm_cnt))),
                                 ml("div", {class: "col a-c"}, ml("span", { class: "pointer", onclick: function() {
                                     getAjax("api/inverter/history/" + obj.id + "/0", parseIvHistory);
-                                }}, "History")),
+                                }}, "{#NAV_HISTORY}")),
                                 ml("div", {class: "col a-r mx-2 mx-md-1"}, String(obj.ch[0][5].toFixed(1)) + t.innerText)
                             ])
                         ),
@@ -448,7 +448,7 @@
 					let el2 = ml("canvas", {id: "histyod", width: "600", height: "200"});
 					html.push(el2);
 					plotIvHistyod(obj,el2.getContext("2d"));
-					modal("History of inverter " + obj.iv_name, ml("div", {}, html));
+					modal("{#NAV_HISTORY} " + obj.iv_name, ml("div", {}, html));
 				}else{
 					modal("History not available, error: " + obj.error, ml("div", {}, html));
 				}
