@@ -1,5 +1,21 @@
 # Development Changes
 
+## 0.8.86 - 2024-02-23
+* RestAPI check for parent element to be JsonObject #1449
+* fix translation #1448 #1442
+* fix reset values when inverter status is 'not available' #1035 #1437
+
+## 0.8.85 - 2024-02-22
+* possible fix of MqTT fix "total values are sent to often" #1421
+* fix translation #1442
+* availability check only related to live data #1035 #1437
+
+## 0.8.84 - 2024-02-19
+* fix homeassistant autodiscovery #1432
+* merge PR: more gracefull handling of complete retransmits #1433
+
+# RELEASE 0.8.83 - 2024-02-16
+
 ## 0.8.82 - 2024-02-15
 * fixed crash once firmware version was read and sent via MqTT #1428
 * possible fix: reset yield offset on midnight #1429
