@@ -626,9 +626,8 @@ class Inverter {
             //update yod:
             uint16_t yod_idx = historyMeas.yod_idx;
             uint8_t pos = getPosByChFld(CH0, FLD_YD, rec);
-            REC_TYP yod = (0xff != pos) ? getValue(pos, rec) : 0.0;
-            if (yod > historyMeas.yod[yod_idx]){
-                historyMeas.yod[yod_idx] = yod + 0.5f; //Wh
+            if (0xff != pos){
+                historyMeas.yod[yod_idx] = getValue(pos, rec) + 0.5f; //Wh
                 historyMeas.ts_yod[yod_idx] = ts_now;
             }
 
