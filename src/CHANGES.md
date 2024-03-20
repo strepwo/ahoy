@@ -1,5 +1,45 @@
 # Development Changes
 
+## 0.8.95 - 2024-03-17
+* fix NTP issues #1440 #1497 #1499
+
+## 0.8.94 - 2024-03-16
+* switched AsyncWebServer library
+* Ethernet version now uses same AsyncWebServer library as Wifi version
+* fix translation of `/history`
+* fix RSSI on `/history` #1463
+
+## 0.8.93 - 2024-03-14
+* improved history graph in WebUI #1491
+* merge PR: 1491
+
+## 0.8.92 - 2024-03-10
+* fix read back of limit value, now with one decimal place
+* added grid profile for Mexico #1493
+* added language to display on compile time #1484, #1255, #1479
+* added new environment `esp8266-all` which replace the original `esp8266`. The original now only have `MqTT` support but `Display` and `History` plugins are not included any more #1451
+
+## 0.8.91 - 2024-03-05
+* fix javascript issues #1480
+
+## 0.8.90 - 2024-03-05
+* added preprocessor defines to HTML (from platform.ini) to reduce the HTML in size if modules aren't enabled
+* auto build minimal English versions of ESP8266 and ESP32
+
+## 0.8.89 - 2024-03-02
+* merge PR: Collection of small fixes #1465
+* fix: show esp type on `/history` #1463
+* improved HMS-400-1T support (serial number 1125...) #1460
+
+## 0.8.88 - 2024-02-28
+* fix MqTT statistic data overflow #1458
+* add HMS-400-1T support (serial number 1125...) #1460
+* removed `yield efficiency` because the inverter already calculates correct #1243
+* merge PR: Remove hint to INV_RESET_MIDNIGHT resp. INV_PAUSE_DURING_NIGHT #1431
+
+## 0.8.87 - 2024-02-25
+* fix translations #1455 #1442
+
 ## 0.8.86 - 2024-02-23
 * RestAPI check for parent element to be JsonObject #1449
 * fix translation #1448 #1442
@@ -256,7 +296,7 @@
 
 ## 0.8.39 - 2024-01-01
 * fix MqTT dis_night_comm in the morning #1309 #1286
-* seperated offset for sunrise and sunset #1308
+* separated offset for sunrise and sunset #1308
 * powerlimit (active power control) now has one decimal place (MqTT / API) #1199
 * merge Prometheus metrics fix #1310
 * merge MI grid profile request #1306
@@ -469,7 +509,7 @@
 ## 0.7.61 - 2023-10-01
 * merged `hmPayload` and `hmsPayload` into single class
 * merged generic radio functions into new parent class `radio.h`
-* moved radio statistics into the inverter - each inverter has now seperate statistics which can be accessed by click on the footer in `/live`
+* moved radio statistics into the inverter - each inverter has now separate statistics which can be accessed by click on the footer in `/live`
 * fix compiler warnings #1191
 * fix ePaper logo during night time #1151
 

@@ -16,11 +16,7 @@
 #include "../appInterface.h"
 #include "../hm/hmSystem.h"
 #include "../utils/helper.h"
-#if defined(ETHERNET)
-#include "AsyncWebServer_ESP32_W5500.h"
-#else /* defined(ETHERNET) */
 #include "ESPAsyncWebServer.h"
-#endif /* defined(ETHERNET) */
 #include "html/h/api_js.h"
 #include "html/h/colorBright_css.h"
 #include "html/h/colorDark_css.h"
@@ -483,7 +479,6 @@ class Web {
             mConfig->inst.startWithoutTime = (request->arg("strtWthtTm") == "on");
             mConfig->inst.readGrid = (request->arg("rdGrid") == "on");
             mConfig->inst.rstMaxValsMidNight = (request->arg("invRstMaxMid") == "on");
-            mConfig->inst.yieldEffiency = (request->arg("yldEff")).toFloat();
 
 
             // pinout
@@ -662,7 +657,7 @@ class Web {
             { "max_power",            "gauge",   metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->getMaxPower();} },
             { "radio_rx_success",     "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.rxSuccess;} },
             { "radio_rx_fail",        "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.rxFail;} },
-            { "radio_rx_fail_answer", "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.rxFailNoAnser;} },
+            { "radio_rx_fail_answer", "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.rxFailNoAnswer;} },
             { "radio_frame_cnt",      "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.frmCnt;} },
             { "radio_tx_cnt",         "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.txCnt;} },
             { "radio_retransmits",    "counter" ,metricConstInverterFormat, [](Inverter<> *iv)-> uint64_t {return iv->radioStatistics.retransmits;} },

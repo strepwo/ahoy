@@ -295,8 +295,8 @@
                 },
                 {
                     "token": "INV_RESET_MIDNIGHT",
-                    "en": "Reset values and YieldDay at midnight. ('Pause communication during night' need to be set)",
-                    "de": "Werte und Gesamtertrag um Mitternacht zur&uuml;cksetzen ('Kommunikation w&auml;hrend der Nacht pausieren' muss gesetzt sein)"
+                    "en": "Reset values and YieldDay at midnight",
+                    "de": "Werte und Gesamtertrag um Mitternacht zur&uuml;cksetzen"
                 },
                 {
                     "token": "INV_PAUSE_SUNSET",
@@ -322,11 +322,6 @@
                     "token": "INV_READ_GRID_PROFILE",
                     "en": "Read Grid Profile",
                     "de": "Grid-Profil auslesen"
-                },
-                {
-                    "token": "INV_YIELD_EFF",
-                    "en": "Yield Efficiency (default 1.0)",
-                    "de": "Ertragseffizienz (Standard 1.0)"
                 },
                 {
                     "token": "NTP_INTERVAL",
@@ -994,6 +989,16 @@
                     "de": "Fehler"
                 },
                 {
+                    "token": "DAY",
+                    "en": "day",
+                    "de": "Tag"
+                },
+                {
+                    "token": "S",
+                    "en": "s",
+                    "de": "e"
+                },
+                {
                     "token": "NTP_UNREACH",
                     "en": "NTP timeserver unreachable",
                     "de": "NTP Zeitserver nicht erreichbar"
@@ -1524,34 +1529,24 @@
                     "de": "Gesamtleistung"
                 },
                 {
+                    "token": "TOTAL_POWER_DAY",
+                    "en": "Total Power Today",
+                    "de": "Gesamtleistung heute"
+                },
+                {
                     "token": "TOTAL_YIELD_PER_DAY",
                     "en": "Total Yield per day",
                     "de": "Gesamtertrag pro Tag"
                 },
                 {
                     "token": "MAX_DAY",
-                    "en": "maximum day",
+                    "en": "Maximum day",
                     "de": "Tagesmaximum"
                 },
                 {
                     "token": "LAST_VALUE",
-                    "en": "last value",
-                    "de": "letzter Wert"
-                },
-                {
-                    "token": "MAXIMUM",
-                    "en": "maximum value",
-                    "de": "Maximalwert"
-                },
-                {
-                    "token": "UPDATED",
-                    "en": "Updated every",
-                    "de": "aktualisiert alle"
-                },
-                {
-                    "token": "SECONDS",
-                    "en": "seconds",
-                    "de": "Sekunden"
+                    "en": "Last value",
+                    "de": "Letzter Wert"
                 }
             ]
         }

@@ -16,6 +16,10 @@
 #endif
 
 #include <array>
+#if defined(ETHERNET)
+#include "../eth/ahoyeth.h"
+#endif
+
 #include "../utils/dbg.h"
 #include "../config/config.h"
 #include <espMqttClient.h>
@@ -423,7 +427,7 @@ class PubMqtt {
                 }
 
                 DynamicJsonDocument doc2(512);
-                constexpr static char* unitTotal[] = {"W", "kWh", "Wh", "W"};
+                constexpr static const char* unitTotal[] = {"W", "kWh", "Wh", "W"};
                 doc2[F("name")] = String(name.data());
                 doc2[F("stat_t")] = String(mCfgMqtt->topic) + "/" + ((!total) ? String(iv->config->name) : "total" ) + String(topic.data());
                 doc2[F("unit_of_meas")] = ((!total) ? (iv->getUnit(mDiscovery.sub, rec)) : (unitTotal[mDiscovery.sub]));
