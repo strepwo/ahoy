@@ -340,7 +340,6 @@
                 ctx.translate(0,0);
                 ctx.rotate(-Math.PI/2);
 
-                ctx.font = '8pt Arial';
                 ctx.fillStyle = 'black';
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'right';
@@ -385,11 +384,10 @@
                 let gap = 10800;
                 let x = [];
                 let fl = [];
-                x[0] = 0;
                 let xa = 0;
                 let xr = 0;
                 let utc_last = obj.utc[0];
-                for (let i = 1; i < len; i++) {
+                for (let i = 0; i < len; i++) {
                     let d_utc = utc_last - obj.utc[i];
                     if (d_utc > gap){
                         d_utc = gap;
@@ -407,11 +405,25 @@
                 }
                 let sx = Math.min((bx[1]-bx[0])/xa, 2.5*len/xr);
 
-                ctx.fillStyle = 'gray';
+
+                ctx.textBaseline = 'top';
+                ctx.textAlign = 'center';
+                let h_last = 0;
                 for (let i = 0; i < len; i++) {
                     x[i] = bx[1] - sx*x[i];
                     if (fl[i] == 2){
+                        ctx.fillStyle = 'gray';
                         ctx.fillRect(x[i]+1,by[1],sx*gap-2,-yw);
+                        h_last = 0;
+                    }else{
+                        const date = new Date(obj.utc[i]*1000);
+                        let h = date.getHours();
+                        if ((h_last > 0) && (h != h_last)){
+                            ctx.fillStyle = 'black';
+                            ctx.fillRect(x[i],by[1],1,5);
+                            ctx.fillText(h,x[i],by[1]+7);
+                        }
+                        h_last = h;
                     }
                 }
 
@@ -435,7 +447,7 @@
                     }
                     ctx.stroke();
                     ctx.fillText(obj.ch_name[ch],tx,0);
-					tx -= ctx.measureText(obj.ch_name[ch]).width + 20;
+                    tx -= ctx.measureText(obj.ch_name[ch]).width + 20;
                 }
             }
 
