@@ -33,7 +33,6 @@
 
 #define CONFIG_VERSION      11
 
-
 #define PROT_MASK_INDEX     0x0001
 #define PROT_MASK_LIVE      0x0002
 #define PROT_MASK_SERIAL    0x0004
@@ -55,6 +54,20 @@
 #define DEF_PROT_MQTT       0x0000
 
 
+#define SSID_LEN                32
+#define PWD_LEN                 64
+#define DEVNAME_LEN             16
+#define NTP_ADDR_LEN            32 // DNS Name
+
+#define MQTT_ADDR_LEN           64 // DNS Name
+#define MQTT_CLIENTID_LEN       22 // number of chars is limited to 23 up to v3.1 of MQTT
+#define MQTT_USER_LEN           65 // there is another byte necessary for \0
+#define MQTT_PWD_LEN            65
+#define MQTT_TOPIC_LEN          65
+
+#define MQTT_MAX_PACKET_SIZE    384
+
+
 typedef struct {
     uint8_t ip[4];      // ip address
     uint8_t mask[4];    // sub mask
@@ -62,6 +75,19 @@ typedef struct {
     uint8_t dns2[4];    // dns 2
     uint8_t gateway[4]; // standard gateway
 } cfgIp_t;
+
+
+#if defined(ETHERNET)
+typedef struct {
+    bool enabled;
+    uint8_t pinCs;
+    uint8_t pinSclk;
+    uint8_t pinMiso;
+    uint8_t pinMosi;
+    uint8_t pinIrq;
+    uint8_t pinRst;
+} cfgEth_t;
+#endif
 
 typedef struct {
     char deviceName[DEVNAME_LEN];
@@ -72,12 +98,14 @@ typedef struct {
     uint8_t region;
     int8_t timezone;
 
+    char apPwd[PWD_LEN];
 #if !defined(ETHERNET)
     // wifi
     char stationSsid[SSID_LEN];
     char stationPwd[PWD_LEN];
-    char apPwd[PWD_LEN];
     bool isHidden;
+#else
+    cfgEth_t eth;
 #endif /* !defined(ETHERNET) */
 
     cfgIp_t ip;
@@ -390,10 +418,24 @@ class settings {
             else {
                 snprintf(mCfg.sys.stationSsid, SSID_LEN, FB_WIFI_SSID);
                 snprintf(mCfg.sys.stationPwd,  PWD_LEN,  FB_WIFI_PWD);
-                snprintf(mCfg.sys.apPwd,       PWD_LEN,  WIFI_AP_PWD);
                 mCfg.sys.isHidden = false;
             }
-            #endif /* !defined(ETHERNET) */
+            #endif
+            snprintf(mCfg.sys.apPwd,       PWD_LEN,  WIFI_AP_PWD);
+
+            #if defined(ETHERNET)
+                #if defined(DEF_ETH_ENABLED)
+                mCfg.sys.eth.enabled = true;
+                #else
+                mCfg.sys.eth.enabled = false;
+                #endif
+            mCfg.sys.eth.pinCs   = DEF_ETH_CS_PIN;
+            mCfg.sys.eth.pinSclk = DEF_ETH_SCK_PIN;
+            mCfg.sys.eth.pinMiso = DEF_ETH_MISO_PIN;
+            mCfg.sys.eth.pinMosi = DEF_ETH_MOSI_PIN;
+            mCfg.sys.eth.pinIrq  = DEF_ETH_IRQ_PIN;
+            mCfg.sys.eth.pinRst  = DEF_ETH_RST_PIN;
+            #endif
 
             snprintf(mCfg.sys.deviceName,  DEVNAME_LEN, DEF_DEVICE_NAME);
             mCfg.sys.region   = 0; // Europe
@@ -406,7 +448,11 @@ class settings {
             mCfg.nrf.pinMosi           = DEF_NRF_MOSI_PIN;
             mCfg.nrf.pinSclk           = DEF_NRF_SCLK_PIN;
 
+            #if defined(ETHERNET)
+            mCfg.nrf.enabled           = false;
+            #else
             mCfg.nrf.enabled           = true;
+            #endif
 
             #if defined(ESP32)
             mCfg.cmt.pinSclk           = DEF_CMT_SCLK;
@@ -427,8 +473,8 @@ class settings {
             mCfg.ntp.port = DEF_NTP_PORT;
             mCfg.ntp.interval = 720;
 
-            mCfg.sun.lat         = 0.0;
-            mCfg.sun.lon         = 0.0;
+            mCfg.sun.lat         = 51.1; // mid of Germany
+            mCfg.sun.lon         = 10.5; // mid of Germany
             mCfg.sun.offsetSecMorning = 0;
             mCfg.sun.offsetSecEvening = 0;
 
@@ -544,6 +590,16 @@ class settings {
                 ah::ip2Char(mCfg.sys.ip.dns1, buf);    obj[F("dns1")] = String(buf);
                 ah::ip2Char(mCfg.sys.ip.dns2, buf);    obj[F("dns2")] = String(buf);
                 ah::ip2Char(mCfg.sys.ip.gateway, buf); obj[F("gtwy")] = String(buf);
+
+                #if defined(ETHERNET)
+                obj[F("en")]   = mCfg.sys.eth.enabled;
+                obj[F("cs")]   = mCfg.sys.eth.pinCs;
+                obj[F("sclk")] = mCfg.sys.eth.pinSclk;
+                obj[F("miso")] = mCfg.sys.eth.pinMiso;
+                obj[F("mosi")] = mCfg.sys.eth.pinMosi;
+                obj[F("irq")]  = mCfg.sys.eth.pinIrq;
+                obj[F("rst")]  = mCfg.sys.eth.pinRst;
+                #endif
             } else {
                 #if !defined(ETHERNET)
                 getChar(obj, F("ssid"), mCfg.sys.stationSsid, SSID_LEN);
@@ -567,6 +623,16 @@ class settings {
                 if(mCfg.sys.protectionMask == 0)
                     mCfg.sys.protectionMask = DEF_PROT_INDEX | DEF_PROT_LIVE | DEF_PROT_SERIAL | DEF_PROT_SETUP
                                             | DEF_PROT_UPDATE | DEF_PROT_SYSTEM | DEF_PROT_API | DEF_PROT_MQTT | DEF_PROT_HISTORY;
+
+                #if defined(ETHERNET)
+                getVal<bool>(obj, F("en"), &mCfg.sys.eth.enabled);
+                getVal<uint8_t>(obj, F("cs"), &mCfg.sys.eth.pinCs);
+                getVal<uint8_t>(obj, F("sclk"), &mCfg.sys.eth.pinSclk);
+                getVal<uint8_t>(obj, F("miso"), &mCfg.sys.eth.pinMiso);
+                getVal<uint8_t>(obj, F("mosi"), &mCfg.sys.eth.pinMosi);
+                getVal<uint8_t>(obj, F("irq"), &mCfg.sys.eth.pinIrq);
+                getVal<uint8_t>(obj, F("rst"), &mCfg.sys.eth.pinRst);
+                #endif
             }
         }
 

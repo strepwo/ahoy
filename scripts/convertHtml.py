@@ -9,19 +9,40 @@ from pathlib import Path
 import subprocess
 import configparser
 Import("env")
+build_flags = []
 
 import htmlPreprocessorDefines as prepro
 
-
-
-def get_build_flags():
+def getFlagsOfEnv(env):
     config = configparser.ConfigParser()
     config.read('platformio.ini')
     global build_flags
-    build_flags = config["env:" + env['PIOENV']]['build_flags'].split('\n')
+    flags = config[env]['build_flags'].split('\n')
 
-    for i in range(len(build_flags)):
-        build_flags[i] = build_flags[i][2:]
+    for i in range(len(flags)):
+        if flags[i][:2] == "-D" or flags[i][:2] == "${":
+            flags[i] = flags[i][2:]
+        if flags[i][-13:-1] == ".build_flags":
+            getFlagsOfEnv(flags[i].split(".build_flags")[0])
+        elif len(flags[i]) > 0:
+            build_flags = build_flags + [flags[i]]
+
+def parseDefinesH():
+    global build_flags
+    pattern = r'^\s*#\s*define\s+(\w+)'
+
+    with open("defines.h", "r") as f:
+        for line in f:
+            match = re.match(pattern, line)
+            if match:
+                build_flags += [match.group(1)]
+
+
+def get_build_flags():
+    getFlagsOfEnv("env:" + env['PIOENV'])
+    config = configparser.ConfigParser()
+    config.read('platformio.ini')
+    parseDefinesH()
 
     # translate board
     board = config["env:" + env['PIOENV']]['board']

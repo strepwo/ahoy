@@ -17,9 +17,9 @@
 #include "defines.h"
 #include "appInterface.h"
 #include "hm/hmSystem.h"
-#include "hm/hmRadio.h"
+#include "hm/NrfRadio.h"
 #if defined(ESP32)
-#include "hms/hmsRadio.h"
+#include "hms/CmtRadio.h"
 #endif
 #if defined(ENABLE_MQTT)
 #include "publisher/pubMqtt.h"
@@ -37,9 +37,13 @@
 #include "web/web.h"
 #include "hm/Communication.h"
 #if defined(ETHERNET)
-    #include "eth/ahoyeth.h"
+    #include "network/AhoyEthernet.h"
 #else /* defined(ETHERNET) */
-    #include "wifi/ahoywifi.h"
+    #if defined(ESP32)
+        #include "network/AhoyWifiEsp32.h"
+    #else
+        #include "network/AhoyWifiEsp8266.h"
+    #endif
     #include "utils/improv.h"
 #endif /* defined(ETHERNET) */
 
@@ -163,31 +167,30 @@ class app : public IApp, public ah::Scheduler {
         }
 
         #if !defined(ETHERNET)
-        void scanAvailNetworks() override {
-            mWifi.scanAvailNetworks();
-        }
-
         bool getAvailNetworks(JsonObject obj) override {
-            return mWifi.getAvailNetworks(obj);
+            return mNetwork->getAvailNetworks(obj);
         }
 
         void setupStation(void) override {
-            mWifi.setupStation();
-        }
-
-        void setStopApAllowedMode(bool allowed) override {
-            mWifi.setStopApAllowedMode(allowed);
-        }
-
-        String getStationIp(void) override {
-            return mWifi.getStationIp();
+            mNetwork->begin();
         }
 
         bool getWasInCh12to14(void) const override {
-            return mWifi.getWasInCh12to14();
+            #if defined(ESP8266)
+            return mNetwork->getWasInCh12to14();
+            #else
+            return false;
+            #endif
+        }
+        #endif /* !defined(ETHERNET) */
+
+        String getIp(void) override {
+            return mNetwork->getIp();
         }
 
-        #endif /* !defined(ETHERNET) */
+        bool isApActive(void) override {
+            return mNetwork->isApActive();
+        }
 
         void setRebootFlag() override {
             once(std::bind(&app::tickReboot, this), 3, "rboot");
@@ -295,13 +298,7 @@ class app : public IApp, public ah::Scheduler {
             DPRINT(DBG_DEBUG, F("setTimestamp: "));
             DBGPRINTLN(String(newTime));
             if(0 == newTime)
-            {
-                #if defined(ETHERNET)
-                mEth.updateNtpTime();
-                #else /* defined(ETHERNET) */
-                mWifi.updateNtpTime();
-                #endif /* defined(ETHERNET) */
-            }
+                mNetwork->updateNtpTime();
             else
                 Scheduler::setTimestamp(newTime);
         }
@@ -393,8 +390,10 @@ class app : public IApp, public ah::Scheduler {
         bool mNtpReceived = false;
         void updateNtp(void);
 
-        void triggerTickSend() override {
-            once(std::bind(&app::tickSend, this), 0, "tSend");
+        void triggerTickSend(uint8_t id) override {
+            once([this, id]() {
+                sendIv(mSys.getInverterByPos(id));
+            }, 0, "devct");
         }
 
         void tickCalcSunrise(void);
@@ -403,22 +402,19 @@ class app : public IApp, public ah::Scheduler {
         void tickSunrise(void);
         void tickComm(void);
         void tickSend(void);
+        bool sendIv(Inverter<> *iv);
         void tickMinute(void);
         void tickZeroValues(void);
         void tickMidnight(void);
         void notAvailChanged(void);
 
         HmSystemType mSys;
-        HmRadio<> mNrfRadio;
+        NrfRadio<> mNrfRadio;
         Communication mCommunication;
 
         bool mShowRebootRequest = false;
 
-        #if defined(ETHERNET)
-        ahoyeth mEth;
-        #else /* defined(ETHERNET) */
-        ahoywifi mWifi;
-        #endif /* defined(ETHERNET) */
+        AhoyNetwork *mNetwork = nullptr;
         WebType mWeb;
         RestApiType mApi;
         Protection *mProtection = nullptr;
@@ -443,7 +439,6 @@ class app : public IApp, public ah::Scheduler {
         bool mSaveReboot = false;
 
         uint8_t mSendLastIvId = 0;
-        bool mSendFirst = false;
         bool mAllIvNotAvail = false;
 
         bool mNetworkConnected = false;

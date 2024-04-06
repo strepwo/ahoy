@@ -45,25 +45,21 @@ void app::setup() {
 
     esp_task_wdt_reset();
 
-    if(mConfig->nrf.enabled) {
-        mNrfRadio.setup(&mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace, mConfig->nrf.pinIrq, mConfig->nrf.pinCe, mConfig->nrf.pinCs, mConfig->nrf.pinSclk, mConfig->nrf.pinMosi, mConfig->nrf.pinMiso);
-    }
+    mNrfRadio.setup(&mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace, &mConfig->nrf);
     #if defined(ESP32)
     if(mConfig->cmt.enabled) {
         mCmtRadio.setup(&mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace, mConfig->cmt.pinSclk, mConfig->cmt.pinSdio, mConfig->cmt.pinCsb, mConfig->cmt.pinFcsb, mConfig->sys.region);
     }
     #endif
+
     #ifdef ETHERNET
         delay(1000);
-        mEth.setup(mConfig, &mTimestamp, [this](bool gotIp) { this->onNetwork(gotIp); }, [this](bool gotTime) { this->onNtpUpdate(gotTime); });
+        mNetwork = static_cast<AhoyNetwork*>(new AhoyEthernet());
+    #else
+        mNetwork = static_cast<AhoyNetwork*>(new AhoyWifi());
     #endif // ETHERNET
-
-    #if !defined(ETHERNET)
-        mWifi.setup(mConfig, &mTimestamp, [this](bool gotIp) { this->onNetwork(gotIp); }, [this](bool gotTime) { this->onNtpUpdate(gotTime); });
-        #if !defined(AP_ONLY)
-            everySec(std::bind(&ahoywifi::tickWifiLoop, &mWifi), "wifiL");
-        #endif
-    #endif /* defined(ETHERNET) */
+    mNetwork->setup(mConfig, &mTimestamp, [this](bool gotIp) { this->onNetwork(gotIp); }, [this](bool gotTime) { this->onNtpUpdate(gotTime); });
+    mNetwork->begin();
 
     esp_task_wdt_reset();
 
@@ -89,7 +85,7 @@ void app::setup() {
     #if defined(ENABLE_MQTT)
     mMqttEnabled = (mConfig->mqtt.broker[0] > 0);
     if (mMqttEnabled) {
-        mMqtt.setup(&mConfig->mqtt, mConfig->sys.deviceName, mVersion, &mSys, &mTimestamp, &mUptime);
+        mMqtt.setup(this, &mConfig->mqtt, mConfig->sys.deviceName, mVersion, &mSys, &mTimestamp, &mUptime);
         mMqtt.setSubscriptionCb(std::bind(&app::mqttSubRxCb, this, std::placeholders::_1));
         mCommunication.addAlarmListener([this](Inverter<> *iv) { mMqtt.alarmEvent(iv); });
     }
@@ -143,8 +139,7 @@ void app::setup() {
 void app::loop(void) {
     esp_task_wdt_reset();
 
-    if(mConfig->nrf.enabled)
-        mNrfRadio.loop();
+    mNrfRadio.loop();
 
     #if defined(ESP32)
     if(mConfig->cmt.enabled)
@@ -163,7 +158,6 @@ void app::loop(void) {
 
 //-----------------------------------------------------------------------------
 void app::onNetwork(bool gotIp) {
-    DPRINTLN(DBG_INFO, F("onNetwork"));
     mNetworkConnected = gotIp;
     ah::Scheduler::resetTicker();
     regularTickers(); //reinstall regular tickers
@@ -171,12 +165,6 @@ void app::onNetwork(bool gotIp) {
     mMqttReconnect = true;
     mSunrise = 0;  // needs to be set to 0, to reinstall sunrise and ivComm tickers!
     once(std::bind(&app::tickNtpUpdate, this), 2, "ntp2");
-    #if !defined(ETHERNET)
-    if (WIFI_AP == WiFi.getMode()) {
-        mMqttEnabled = false;
-    }
-    everySec(std::bind(&ahoywifi::tickWifiLoop, &mWifi), "wifiL");
-    #endif /* !defined(ETHERNET) */
 }
 
 //-----------------------------------------------------------------------------
@@ -184,6 +172,7 @@ void app::regularTickers(void) {
     DPRINTLN(DBG_DEBUG, F("regularTickers"));
     everySec(std::bind(&WebType::tickSecond, &mWeb), "webSc");
     everySec([this]() { mProtection->tickSecond(); }, "prot");
+    everySec([this]() {mNetwork->tickNetworkLoop(); }, "net");
 
     // Plugins
     #if defined(PLUGIN_DISPLAY)
@@ -204,8 +193,13 @@ void app::regularTickers(void) {
     #endif /*ENABLE_SIMULATOR*/
 }
 
+//-----------------------------------------------------------------------------
 void app::onNtpUpdate(bool gotTime) {
     mNtpReceived = true;
+    if ((0 == mSunrise) && (0.0 != mConfig->sun.lat) && (0.0 != mConfig->sun.lon)) {
+        mCalculatedTimezoneOffset = (int8_t)((mConfig->sun.lon >= 0 ? mConfig->sun.lon + 7.5 : mConfig->sun.lon - 7.5) / 15) * 3600;
+        tickCalcSunrise();
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -236,10 +230,8 @@ void app::updateNtp(void) {
         }
     }
 
-    if ((0 == mSunrise) && (0.0 != mConfig->sun.lat) && (0.0 != mConfig->sun.lon)) {
-        mCalculatedTimezoneOffset = (int8_t)((mConfig->sun.lon >= 0 ? mConfig->sun.lon + 7.5 : mConfig->sun.lon - 7.5) / 15) * 3600;
-        tickCalcSunrise();
-    }
+    if(mNtpReceived)
+        onNtpUpdate(true);
 
     mMqttReconnect = false;
 }
@@ -248,26 +240,14 @@ void app::updateNtp(void) {
 void app::tickNtpUpdate(void) {
     uint32_t nxtTrig = 5;  // default: check again in 5 sec
 
-    #if defined(ETHERNET)
-        if (!mNtpReceived)
-            mEth.updateNtpTime();
-        else
-            mNtpReceived = false;
-        #else
-        if (!mNtpReceived)
-            mWifi.updateNtpTime();
-        else
-            mNtpReceived = false;
-    #endif
+    if (!mNtpReceived)
+        mNetwork->updateNtpTime();
+    else {
+        nxtTrig = mConfig->ntp.interval * 60;  // check again in configured interval
+        mNtpReceived = false;
+    }
 
     updateNtp();
-    nxtTrig = mConfig->ntp.interval * 60;  // check again in 12h
-
-    // immediately start communicating
-    if (mSendFirst) {
-        mSendFirst = false;
-        once(std::bind(&app::tickSend, this), 1, "senOn");
-    }
 
     mMqttReconnect = false;
 
@@ -422,29 +402,8 @@ void app::tickSend(void) {
 
     for (uint8_t i = 0; i < MAX_NUM_INVERTERS; i++) {
         Inverter<> *iv = mSys.getInverterByPos(i);
-        if(NULL == iv)
-            continue;
-
-        if(iv->config->enabled) {
-            if(!iv->commEnabled) {
-                DPRINT_IVID(DBG_INFO, iv->id);
-                DBGPRINTLN(F("no communication to the inverter (night time)"));
-                continue;
-            }
-
-            if(!iv->radio->isChipConnected())
-                continue;
-
-            if(InverterStatus::OFF != iv->status)
-                notAvail = false;
-
-            iv->tickSend([this, iv](uint8_t cmd, bool isDevControl) {
-                if(isDevControl)
-                    mCommunication.addImportant(iv, cmd);
-                else
-                    mCommunication.add(iv, cmd);
-            });
-        }
+        if(!sendIv(iv))
+            notAvail = false;
     }
 
     if(mAllIvNotAvail != notAvail)
@@ -452,6 +411,37 @@ void app::tickSend(void) {
     mAllIvNotAvail = notAvail;
 
     updateLed();
+}
+
+//-----------------------------------------------------------------------------
+bool app::sendIv(Inverter<> *iv) {
+    if(NULL == iv)
+        return true;
+
+    if(!iv->config->enabled)
+        return true;
+
+    if(!iv->commEnabled) {
+        DPRINT_IVID(DBG_INFO, iv->id);
+        DBGPRINTLN(F("no communication to the inverter (night time)"));
+        return true;
+    }
+
+    if(!iv->radio->isChipConnected())
+        return true;
+
+    bool notAvail = true;
+    if(InverterStatus::OFF != iv->status)
+        notAvail = false;
+
+    iv->tickSend([this, iv](uint8_t cmd, bool isDevControl) {
+        if(isDevControl)
+            mCommunication.addImportant(iv, cmd);
+        else
+            mCommunication.add(iv, cmd);
+    });
+
+    return notAvail;
 }
 
 //-----------------------------------------------------------------------------
@@ -546,7 +536,6 @@ void app::resetSystem(void) {
     mTimestamp = 1;
 #endif
 
-    mSendFirst = true;
     mAllIvNotAvail = true;
 
     mSunrise = 0;

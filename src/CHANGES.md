@@ -1,5 +1,56 @@
 # Development Changes
 
+## 0.8.106 - 2024-04-05
+* fix bootloop with CMT and NRF on ESP32 #1566 #1562
+* possible fix of #1553
+* change MqTT return value of power limit acknowledge from `boolean` to `float`. The value returned is the same as it was set to confirm reception (not the read back value)
+
+## 0.8.105 - 2024-04-05
+* cleanup of `defines.h`
+* fix compile of esp32-minimal
+
+## 0.8.104 - 2024-04-04
+* fix reboot on inverter save (ESP32) #1559
+* fix NRF and Ethernet #1506
+
+## 0.8.103 - 2024-04-02
+* merge PR: fix: get refresh property from object #1552
+* merge PR: fix typos and spelling in Github Issue template #1550
+* merge PR: shorten last cmt waiting time #1549
+* fix cppcheck warnings
+* changed MqTT retained flags of some topics
+
+## 0.8.102 - 2024-04-01
+* fix NTP for `opendtufusion` #1542
+* fix scan WiFi in AP mode
+* fix MDNS #1538
+* improved Wizard
+* improved MqTT on devcontrol e.g. set power limit
+
+## 0.8.101 - 2024-03-28
+* updated converter scripts to include all enabled features again (redundant scan of build flags) #1534
+
+## 0.8.100 - 2024-03-27
+* fix captions in `/history #1532
+* fix get NTP time #1529 #1530
+* fix translation #1516
+
+## 0.8.99 - 2024-03-27
+* fix compilation of all environments
+
+## 0.8.98 - 2024-03-24
+* new network routines
+
+## 0.8.97 - 2024-03-22
+* add support for newest generation of inverters with A-F in their serial number
+* fix NTP and sunrise / sunset
+* set default coordinates to the mid of Germany #1516
+
+## 0.8.96 - 2024-03-21
+* fix precision of power limit in `/live` #1517
+* fix translation of `Werte ausgeben` in `settings` #1507
+* add grid profile #1518
+
 ## 0.8.95 - 2024-03-17
 * fix NTP issues #1440 #1497 #1499
 
