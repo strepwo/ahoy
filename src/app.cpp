@@ -33,23 +33,16 @@ void app::setup() {
     resetSystem();
     esp_task_wdt_reset();
 
-    mSettings.setup();
-    mSettings.getPtr(mConfig);
+    mSettings.setup(mConfig);
     ah::Scheduler::setup(mConfig->inst.startWithoutTime);
     DPRINT(DBG_INFO, F("Settings valid: "));
-    DSERIAL.flush();
-    if (mSettings.getValid())
-        DBGPRINTLN(F("true"));
-    else
-        DBGPRINTLN(F("false"));
+    DBGPRINTLN(mConfig->valid ? F("true") : F("false"));
 
     esp_task_wdt_reset();
 
     mNrfRadio.setup(&mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace, &mConfig->nrf);
     #if defined(ESP32)
-    if(mConfig->cmt.enabled) {
-        mCmtRadio.setup(&mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace, mConfig->cmt.pinSclk, mConfig->cmt.pinSdio, mConfig->cmt.pinCsb, mConfig->cmt.pinFcsb, mConfig->sys.region);
-    }
+    mCmtRadio.setup(&mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace, &mConfig->cmt, mConfig->sys.region);
     #endif
 
     #ifdef ETHERNET
@@ -57,16 +50,16 @@ void app::setup() {
         mNetwork = static_cast<AhoyNetwork*>(new AhoyEthernet());
     #else
         mNetwork = static_cast<AhoyNetwork*>(new AhoyWifi());
-    #endif // ETHERNET
+    #endif
     mNetwork->setup(mConfig, &mTimestamp, [this](bool gotIp) { this->onNetwork(gotIp); }, [this](bool gotTime) { this->onNtpUpdate(gotTime); });
     mNetwork->begin();
 
     esp_task_wdt_reset();
 
     mCommunication.setup(&mTimestamp, &mConfig->serial.debug, &mConfig->serial.privacyLog, &mConfig->serial.printWholeTrace);
-    mCommunication.addPayloadListener(std::bind(&app::payloadEventListener, this, std::placeholders::_1, std::placeholders::_2));
+    mCommunication.addPayloadListener([this] (uint8_t cmd, Inverter<> *iv) { payloadEventListener(cmd, iv); });
     #if defined(ENABLE_MQTT)
-    mCommunication.addPowerLimitAckListener([this] (Inverter<> *iv) { mMqtt.setPowerLimitAck(iv); });
+        mCommunication.addPowerLimitAckListener([this] (Inverter<> *iv) { mMqtt.setPowerLimitAck(iv); });
     #endif
     mSys.setup(&mTimestamp, &mConfig->inst, this);
     for (uint8_t i = 0; i < MAX_NUM_INVERTERS; i++) {
@@ -81,7 +74,6 @@ void app::setup() {
     esp_task_wdt_reset();
 
     // when WiFi is in client mode, then enable mqtt broker
-    #if !defined(AP_ONLY)
     #if defined(ENABLE_MQTT)
     mMqttEnabled = (mConfig->mqtt.broker[0] > 0);
     if (mMqttEnabled) {
@@ -89,7 +81,6 @@ void app::setup() {
         mMqtt.setSubscriptionCb(std::bind(&app::mqttSubRxCb, this, std::placeholders::_1));
         mCommunication.addAlarmListener([this](Inverter<> *iv) { mMqtt.alarmEvent(iv); });
     }
-    #endif
     #endif
     setupLed();
 
@@ -126,9 +117,7 @@ void app::setup() {
 
     #if defined(ENABLE_SIMULATOR)
     mSimulator.setup(&mSys, &mTimestamp, 0);
-    mSimulator.addPayloadListener([this](uint8_t cmd, Inverter<> *iv) {
-        payloadEventListener(cmd, iv);
-    });
+    mSimulator.addPayloadListener([this](uint8_t cmd, Inverter<> *iv) { payloadEventListener(cmd, iv); });
     #endif /*ENABLE_SIMULATOR*/
 
     esp_task_wdt_reset();
@@ -142,8 +131,7 @@ void app::loop(void) {
     mNrfRadio.loop();
 
     #if defined(ESP32)
-    if(mConfig->cmt.enabled)
-        mCmtRadio.loop();
+    mCmtRadio.loop();
     #endif
 
     ah::Scheduler::loop();
@@ -162,7 +150,7 @@ void app::onNetwork(bool gotIp) {
     ah::Scheduler::resetTicker();
     regularTickers(); //reinstall regular tickers
     every(std::bind(&app::tickSend, this), mConfig->inst.sendInterval, "tSend");
-    mMqttReconnect = true;
+    mTickerInstallOnce = true;
     mSunrise = 0;  // needs to be set to 0, to reinstall sunrise and ivComm tickers!
     once(std::bind(&app::tickNtpUpdate, this), 2, "ntp2");
 }
@@ -200,40 +188,37 @@ void app::onNtpUpdate(bool gotTime) {
         mCalculatedTimezoneOffset = (int8_t)((mConfig->sun.lon >= 0 ? mConfig->sun.lon + 7.5 : mConfig->sun.lon - 7.5) / 15) * 3600;
         tickCalcSunrise();
     }
+
+    if (mTickerInstallOnce) {
+        mTickerInstallOnce = false;
+        #if defined(ENABLE_MQTT)
+        if (mMqttEnabled) {
+            mMqtt.tickerSecond();
+            everySec(std::bind(&PubMqttType::tickerSecond, &mMqtt), "mqttS");
+            everyMin(std::bind(&PubMqttType::tickerMinute, &mMqtt), "mqttM");
+        }
+        #endif /*ENABLE_MQTT*/
+
+        if (mConfig->inst.rstValsNotAvail)
+            everyMin(std::bind(&app::tickMinute, this), "tMin");
+
+        if(mNtpReceived) {
+            uint32_t localTime = gTimezone.toLocal(mTimestamp);
+            uint32_t midTrig = gTimezone.toUTC(localTime - (localTime % 86400) + 86400);  // next midnight local time
+            onceAt(std::bind(&app::tickMidnight, this), midTrig, "midNi");
+
+            if (mConfig->sys.schedReboot) {
+                uint32_t rebootTrig = gTimezone.toUTC(localTime - (localTime % 86400) + 86410);  // reboot 10 secs after midnght
+                onceAt(std::bind(&app::tickReboot, this), rebootTrig, "midRe");
+            }
+        }
+    }
 }
 
 //-----------------------------------------------------------------------------
 void app::updateNtp(void) {
-    #if defined(ENABLE_MQTT)
-    if (mMqttReconnect && mMqttEnabled) {
-        mMqtt.tickerSecond();
-        everySec(std::bind(&PubMqttType::tickerSecond, &mMqtt), "mqttS");
-        everyMin(std::bind(&PubMqttType::tickerMinute, &mMqtt), "mqttM");
-    }
-    #endif /*ENABLE_MQTT*/
-
-    // only install schedulers once even if NTP wasn't successful in first loop
-    if (mMqttReconnect) {  // @TODO: mMqttReconnect is variable which scope has changed
-        if (mConfig->inst.rstValsNotAvail)
-            everyMin(std::bind(&app::tickMinute, this), "tMin");
-
-        uint32_t localTime = gTimezone.toLocal(mTimestamp);
-        uint32_t midTrig = gTimezone.toUTC(localTime - (localTime % 86400) + 86400);  // next midnight local time
-        onceAt(std::bind(&app::tickMidnight, this), midTrig, "midNi");
-
-        if (mConfig->sys.schedReboot) {
-            uint32_t rebootTrig = gTimezone.toUTC(localTime - (localTime % 86400) + 86410);  // reboot 10 secs after midnght
-            if (rebootTrig <= mTimestamp) { //necessary for times other than midnight to prevent reboot loop
-               rebootTrig += 86400;
-            }
-            onceAt(std::bind(&app::tickReboot, this), rebootTrig, "midRe");
-        }
-    }
-
     if(mNtpReceived)
         onNtpUpdate(true);
-
-    mMqttReconnect = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -248,8 +233,6 @@ void app::tickNtpUpdate(void) {
     }
 
     updateNtp();
-
-    mMqttReconnect = false;
 
     once(std::bind(&app::tickNtpUpdate, this), nxtTrig, "ntp");
 }
@@ -550,6 +533,7 @@ void app::resetSystem(void) {
 
     mNetworkConnected = false;
     mNtpReceived = false;
+    mTickerInstallOnce = false;
 }
 
 //-----------------------------------------------------------------------------

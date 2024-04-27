@@ -33,28 +33,28 @@
 
 // prototypes
 template<class T=float>
-static T calcYieldTotalCh0(Inverter<> *iv, uint8_t arg0);
+T calcYieldTotalCh0(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcYieldDayCh0(Inverter<> *iv, uint8_t arg0);
+T calcYieldDayCh0(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcUdcCh(Inverter<> *iv, uint8_t arg0);
+T calcUdcCh(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcPowerDcCh0(Inverter<> *iv, uint8_t arg0);
+T calcPowerDcCh0(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcEffiencyCh0(Inverter<> *iv, uint8_t arg0);
+T calcEffiencyCh0(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcIrradiation(Inverter<> *iv, uint8_t arg0);
+T calcIrradiation(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcMaxPowerAcCh0(Inverter<> *iv, uint8_t arg0);
+T calcMaxPowerAcCh0(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
-static T calcMaxPowerDc(Inverter<> *iv, uint8_t arg0);
+T calcMaxPowerDc(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
 using func_t = T (Inverter<> *, uint8_t);
@@ -84,7 +84,7 @@ struct record_t {
     byteAssign_t* assign = nullptr; // assignment of bytes in payload
     uint8_t length = 0;             // length of the assignment list
     T *record = nullptr;            // data pointer
-    uint32_t ts = 0;                // timestamp of last received payload
+    uint32_t ts = 0;                // Timestamp of last received payload
     uint8_t pyldLen = 0;            // expected payload length for plausibility check
     MqttSentStatus mqttSentStatus = MqttSentStatus:: NEW_DATA; // indicates the current MqTT sent status
 };
@@ -172,7 +172,7 @@ class Inverter {
         statistics_t  radioStatistics;                      // information about transmitted, failed, ... packets
         HeuristicInv  heuristics;                           // heuristic information / logic
         uint8_t       curCmtFreq = 0;                       // current used CMT frequency, used to check if freq. was changed during runtime
-        uint32_t      tsMaxAcPower = 0;                     // holds the timestamp when the MaxAC power was seen
+        uint32_t      tsMaxAcPower = 0;                     // holds the Timestamp when the MaxAC power was seen
         bool          commEnabled = true;                   // 'pause night communication' sets this field to false
         history_t<REC_TYP> historyMeas;  // structure for history of some recordMeas-data (watt)
 
@@ -216,7 +216,7 @@ class Inverter {
                     cb(InverterDevInform_Simple, false); // get hardware version
                 } else if((alarmLastId != alarmMesIndex) && (alarmMesIndex != 0)) {
                     cb(AlarmData, false);                // get last alarms
-                } else if((0 == mGridLen) && generalConfig->readGrid) { // read grid profile
+                } else if((0 == mGridLen) && GeneralConfig->readGrid) { // read grid profile
                     cb(GridOnProFilePara, false);
                 } else if (mGetLossInterval > AHOY_GET_LOSS_INTERVAL) { // get loss rate
                     mGetLossInterval = 1;
@@ -240,7 +240,7 @@ class Inverter {
                         if (getChannelFieldValue(CH0, FLD_PART_NUM, rec) == 0) {
                             cb(0x0f, false); // hard- and firmware version for missing HW part nr, delivered by frame 1
                             mIvRxCnt +=2;
-                        } else if((getChannelFieldValue(CH0, FLD_GRID_PROFILE_CODE, rec) == 0) && generalConfig->readGrid) // read grid profile
+                        } else if((getChannelFieldValue(CH0, FLD_GRID_PROFILE_CODE, rec) == 0) && GeneralConfig->readGrid) // read grid profile
                             cb(0x10, false); // legacy GPF command
                     }
                 }
@@ -301,15 +301,18 @@ class Inverter {
             if(InverterStatus::OFF != status) {
                 mDevControlRequest = true;
                 devControlCmd = cmd;
-                //app->triggerTickSend(); // done in RestApi.h, because of "chicken-and-egg problem ;-)"
+                assert(App);
+                App->triggerTickSend(id);
+                return true;
             }
-            return (InverterStatus::OFF != status);
+            return false;
         }
 
         bool setDevCommand(uint8_t cmd) {
-            if(InverterStatus::OFF != status)
+            bool retval = (InverterStatus::OFF != status);
+            if(retval)
                 devControlCmd = cmd;
-            return (InverterStatus::OFF != status);
+            return retval;
         }
 
         void addValue(uint8_t pos, const uint8_t buf[], record_t<> *rec) {
@@ -439,14 +442,14 @@ class Inverter {
             if(recordMeas.ts == 0)
                 return false;
 
-            if(((*timestamp) - recordMeas.ts) < INVERTER_INACT_THRES_SEC)
+            if(((*Timestamp) - recordMeas.ts) < INVERTER_INACT_THRES_SEC)
                 avail = true;
 
             if(avail) {
                 if(status < InverterStatus::PRODUCING)
                     status = InverterStatus::STARTING;
             } else {
-                if(((*timestamp) - recordMeas.ts) > INVERTER_OFF_THRES_SEC) {
+                if(((*Timestamp) - recordMeas.ts) > INVERTER_OFF_THRES_SEC) {
                     if(status != InverterStatus::OFF) {
                         status = InverterStatus::OFF;
                         actPowerLimit = 0xffff; // power limit will be read once inverter becomes available
@@ -1067,8 +1070,9 @@ class Inverter {
         }
 
     public:
-        static uint32_t  *timestamp;     // system timestamp
-        static cfgInst_t *generalConfig; // general inverter configuration from setup
+        static uint32_t  *Timestamp;     // system timestamp
+        static cfgInst_t *GeneralConfig; // general inverter configuration from setup
+        static IApp *App;
 
         uint16_t mDtuRxCnt = 0;
         uint16_t mDtuTxCnt = 0;
@@ -1086,9 +1090,11 @@ class Inverter {
 };
 
 template <class REC_TYP>
-uint32_t *Inverter<REC_TYP>::timestamp {0};
+uint32_t *Inverter<REC_TYP>::Timestamp {0};
 template <class REC_TYP>
-cfgInst_t *Inverter<REC_TYP>::generalConfig {0};
+cfgInst_t *Inverter<REC_TYP>::GeneralConfig {0};
+template <class REC_TYP>
+IApp *Inverter<REC_TYP>::App {nullptr};
 
 
 /**
@@ -1098,7 +1104,7 @@ cfgInst_t *Inverter<REC_TYP>::generalConfig {0};
  */
 
 template<class T=float>
-static T calcYieldTotalCh0(Inverter<> *iv, uint8_t arg0) {
+T calcYieldTotalCh0(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcYieldTotalCh0"));
     if(NULL != iv) {
         record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
@@ -1112,7 +1118,7 @@ static T calcYieldTotalCh0(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcYieldDayCh0(Inverter<> *iv, uint8_t arg0) {
+T calcYieldDayCh0(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcYieldDayCh0"));
     if(NULL != iv) {
         record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
@@ -1126,7 +1132,7 @@ static T calcYieldDayCh0(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcUdcCh(Inverter<> *iv, uint8_t arg0) {
+T calcUdcCh(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcUdcCh"));
     // arg0 = channel of source
     record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
@@ -1140,7 +1146,7 @@ static T calcUdcCh(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcPowerDcCh0(Inverter<> *iv, uint8_t arg0) {
+T calcPowerDcCh0(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcPowerDcCh0"));
     if(NULL != iv) {
         record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
@@ -1154,7 +1160,7 @@ static T calcPowerDcCh0(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcEffiencyCh0(Inverter<> *iv, uint8_t arg0) {
+T calcEffiencyCh0(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcEfficiencyCh0"));
     if(NULL != iv) {
         record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
@@ -1170,7 +1176,7 @@ static T calcEffiencyCh0(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcIrradiation(Inverter<> *iv, uint8_t arg0) {
+T calcIrradiation(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcIrradiation"));
     // arg0 = channel
     if(NULL != iv) {
@@ -1182,7 +1188,7 @@ static T calcIrradiation(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcMaxPowerAcCh0(Inverter<> *iv, uint8_t arg0) {
+T calcMaxPowerAcCh0(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcMaxPowerAcCh0"));
     T acMaxPower = 0.0;
     if(NULL != iv) {
@@ -1195,7 +1201,7 @@ static T calcMaxPowerAcCh0(Inverter<> *iv, uint8_t arg0) {
             }
         }
         if(acPower > acMaxPower) {
-            iv->tsMaxAcPower = *iv->timestamp;
+            iv->tsMaxAcPower = *iv->Timestamp;
             return acPower;
         }
     }
@@ -1203,7 +1209,7 @@ static T calcMaxPowerAcCh0(Inverter<> *iv, uint8_t arg0) {
 }
 
 template<class T=float>
-static T calcMaxPowerDc(Inverter<> *iv, uint8_t arg0) {
+T calcMaxPowerDc(Inverter<> *iv, uint8_t arg0) {
     DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcMaxPowerDc"));
     // arg0 = channel
     T dcMaxPower = 0.0;

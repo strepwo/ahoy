@@ -1,5 +1,38 @@
 # Development Changes
 
+## 0.8.113 - 2024-04-25
+* code cleanup
+* fix ESP32-C3 compile
+
+## 0.8.112 - 2024-04-24
+* improved wizard
+* converted ePaper and Ethernet to hal-SPI
+* improved network connection
+
+## 0.8.111 - 2024-04-17
+* fix MqTT discovery field `ALARM_MES_ID` #1591
+* fix Wifi reconnect for ESP32 #1589 #1575
+* open link from `index.html` in new tab #1588 #1587
+* merge PR: Disable upload and import buttons when no file is selected #1586 #1519
+
+## 0.8.110 - 2024-04-11
+* revert CMT2300A changes #1553
+* merged PR: fix closing tag #1584
+* add disable retain flag #1582
+* fix German translation #1569
+* improved `Wizard`
+
+## 0.8.109 - 2024-04-09
+* fix hal patch
+
+## 0.8.108 - 2024-04-09
+* point to git SHA for `NRF24` library
+
+## 0.8.107 - 2024-04-08
+* fix boot loop on `reboot on midnight` feature #1542, #1599, #1566, #1571
+* fix German translation #1569
+* improved `Wizard`
+
 ## 0.8.106 - 2024-04-05
 * fix bootloop with CMT and NRF on ESP32 #1566 #1562
 * possible fix of #1553

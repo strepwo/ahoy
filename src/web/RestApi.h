@@ -495,7 +495,9 @@ class RestApi {
 
         void getHtmlFactory(AsyncWebServerRequest *request, JsonObject obj) {
             getGeneric(request, obj.createNestedObject(F("generic")));
-            obj[F("html")] = F("Factory reset? <a class=\"btn\" href=\"/factorytrue\">yes</a> <a class=\"btn\" href=\"/\">no</a>");
+            char tmp[200];
+            snprintf(tmp, 200, "%s <a class=\"btn\" href=\"/factorytrue\">%s</a> <a class=\"btn\" href=\"/\">%s</a>", FACTORY_RESET, BTN_YES, BTN_NO);
+            obj[F("html")] = tmp;
         }
 
         void getHtmlFactoryTrue(AsyncWebServerRequest *request, JsonObject obj) {
@@ -805,6 +807,7 @@ class RestApi {
             obj[F("pwd")]        = (strlen(mConfig->mqtt.pwd) > 0) ? F("{PWD}") : String("");
             obj[F("topic")]      = String(mConfig->mqtt.topic);
             obj[F("interval")]   = String(mConfig->mqtt.interval);
+            obj[F("retain")]     = (bool)mConfig->mqtt.enableRetain;
         }
 
         void getNtp(JsonObject obj) {
@@ -987,6 +990,7 @@ class RestApi {
         #if !defined(ETHERNET)
         void getNetworks(JsonObject obj) {
             obj[F("success")] = mApp->getAvailNetworks(obj);
+            obj[F("ip")] = mApp->getIp();
         }
         #endif /* !defined(ETHERNET) */
 
@@ -1105,8 +1109,6 @@ class RestApi {
                     iv->powerLimit[1] = AbsolutNonPersistent;
 
                 accepted = iv->setDevControlRequest(ActivePowerContr);
-                if(accepted)
-                    mApp->triggerTickSend(iv->id);
             } else if(F("dev") == jsonIn[F("cmd")]) {
                 DPRINTLN(DBG_INFO, F("dev cmd"));
                 iv->setDevCommand(jsonIn[F("val")].as<int>());

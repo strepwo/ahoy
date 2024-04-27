@@ -246,6 +246,10 @@
                                     <span id="apiResultMqtt"></span>
                                 </div>
                             </div>
+                            <div class="row mb-3">
+                                <div class="col-8 col-sm-3">{#RETAIN}</div>
+                                <div class="col-4 col-sm-9"><input type="checkbox" name="retain"/></div>
+                            </div>
                         </fieldset>
                     </div>
 
@@ -282,7 +286,7 @@
                             <div id="screenSaver"></div>
                             <div class="row mb-3" id="luminanceOption">
                                 <div class="col-12 col-sm-3 my-2">{#DISP_LUMINANCE}</div>
-                                <div class="col-12 col-sm-9"><input type="number" name="disp_cont" min="0" max="255"></select></div>
+                                <div class="col-12 col-sm-9"><input type="number" name="disp_cont" min="0" max="255"></div>
                             </div>
                             <p class="des">{#DISP_PINOUT}</p>
                             <div id="dispPins"></div>
@@ -291,7 +295,7 @@
                                 <p class="des">{#GRAPH_OPTIONS}</p>
                                 <div class="row mb-3">
                                     <div class="col-12 col-sm-3 my-2">{#GRAPH_SHOW_RATIO}</div>
-                                    <div class="col-12 col-sm-9"><input type="number" name="disp_graph_ratio" min="0" max="100"></select></div>
+                                    <div class="col-12 col-sm-9"><input type="number" name="disp_graph_ratio" min="0" max="100"></div>
                                 </div>
                                 <div id="graphSize"></div>
                             </div>
@@ -317,8 +321,8 @@
                             <div class="col-12 col-sm-9">
                                 <form id="form" method="POST" action="/upload" enctype="multipart/form-data" accept-charset="utf-8">
                                     <div class="row">
-                                        <div class="col-12 col-sm-8 my-2"><input type="file" name="upload"></div>
-                                        <div class="col-12 col-sm-4 my-2"><input type="button" class="btn" value="Import" onclick="hide()"></div>
+                                        <div class="col-12 col-sm-8 my-2"><input type="file" id="importFileInput" name="upload"></div>
+                                        <div class="col-12 col-sm-4 my-2"><input type="button" id="importButton" class="btn" value="Import" onclick="hide()"></div>
                                     </div>
                                 </form>
                             </div>
@@ -608,6 +612,22 @@
                 var obj = {cmd: "discovery_cfg", token: "*"}
                 getAjax("/api/setup", apiCbMqtt, "POST", JSON.stringify(obj));
             }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                const fileInput = document.querySelector('#importFileInput');
+                const button = document.querySelector('#importButton');
+                button.disabled = true;
+                button.title = "Please select a file first";
+                fileInput.addEventListener('change', () => {
+                    if (fileInput.value) {
+                        button.disabled = false;
+                        button.title = "";
+                    } else {
+                        button.disabled = true;
+                        button.title = "Please select a file first";
+                    }
+                });
+            });
 
             function hide() {
                 document.getElementById("form").submit();
@@ -922,6 +942,7 @@
             function parseMqtt(obj) {
                 for(var i of [["Addr", "broker"], ["Port", "port"], ["ClientId", "clientId"], ["User", "user"], ["Pwd", "pwd"], ["Topic", "topic"], ["Interval", "interval"]])
                     document.getElementsByName("mqtt"+i[0])[0].value = obj[i[1]];
+                document.getElementsByName("retain")[0].checked = obj.retain
             }
 
             function parseNtp(obj) {
