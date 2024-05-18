@@ -1,5 +1,38 @@
 # Development Changes
 
+## 0.8.119 - 2024-05-17
+* fix reset values at midnight if WiFi isn't available #1620
+* fix typo in English versions
+* add yield day to history graph #1614
+* added script and [instructions](../manual/factory_firmware.md) how to generate factory firmware which includes predefined settings
+* merge PR: Fix MI overnight behaviour #1626
+
+## 0.8.118 - 2024-05-10
+* possible fix reset max values #1609
+* slightly improved WiFi reconnect
+* update AsyncWebserver to `3.2.0`
+
+## 0.8.117 - 2024-05-09
+* fix reboot issue #1607 #1606
+* fix max temperature tooltip if only one inverter is configured #1605
+
+## 0.8.116 - 2024-05-05
+* calculation of max AC power
+* fix counter overflow communication queue
+* added max inverter temperature
+
+## 0.8.115 - 2024-05-03
+* fix inverter communication with manual time sync #1603
+* improved queue, only add new object once they not exist in queue
+* added option to reset values on communication start (sunrise)
+* fixed calculation of max AC power (API, MqTT)
+
+## 0.8.114 - 2024-04-29
+* fix ESP8266 compile
+* fix history graph
+* fix close button color of modal windows in dark mode #1598
+* fix only one total field in `/live` #1579
+
 ## 0.8.113 - 2024-04-25
 * code cleanup
 * fix ESP32-C3 compile

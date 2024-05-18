@@ -94,6 +94,7 @@ void app::setup() {
     mDbgSyslog.setup(mConfig); // be sure to init after mWeb.setup (webSerial uses also debug callback)
     #endif
     // Plugins
+    mMaxPower.setup(&mTimestamp, mConfig->inst.sendInterval);
     #if defined(PLUGIN_DISPLAY)
     if (DISP_TYPE_T0_NONE != mConfig->plugin.display.type)
         #if defined(ESP32)
@@ -147,12 +148,14 @@ void app::loop(void) {
 //-----------------------------------------------------------------------------
 void app::onNetwork(bool gotIp) {
     mNetworkConnected = gotIp;
-    ah::Scheduler::resetTicker();
-    regularTickers(); //reinstall regular tickers
-    every(std::bind(&app::tickSend, this), mConfig->inst.sendInterval, "tSend");
-    mTickerInstallOnce = true;
-    mSunrise = 0;  // needs to be set to 0, to reinstall sunrise and ivComm tickers!
-    once(std::bind(&app::tickNtpUpdate, this), 2, "ntp2");
+    if(gotIp) {
+        ah::Scheduler::resetTicker();
+        regularTickers(); //reinstall regular tickers
+        every(std::bind(&app::tickSend, this), mConfig->inst.sendInterval, "tSend");
+        mTickerInstallOnce = true;
+        mSunrise = 0;  // needs to be set to 0, to reinstall sunrise and ivComm tickers!
+        once(std::bind(&app::tickNtpUpdate, this), 2, "ntp2");
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -161,6 +164,9 @@ void app::regularTickers(void) {
     everySec(std::bind(&WebType::tickSecond, &mWeb), "webSc");
     everySec([this]() { mProtection->tickSecond(); }, "prot");
     everySec([this]() {mNetwork->tickNetworkLoop(); }, "net");
+
+    if(mConfig->inst.startWithoutTime && !mNetworkConnected)
+        every(std::bind(&app::tickSend, this), mConfig->inst.sendInterval, "tSend");
 
     // Plugins
     #if defined(PLUGIN_DISPLAY)
@@ -275,6 +281,8 @@ void app::tickIVCommunication(void) {
                 if (mTimestamp >= (mSunset + mConfig->sun.offsetSecEvening)) { // current time is past communication stop, nothing to do. Next update will be done at midnight by tickCalcSunrise
                     nxtTrig = 0;
                 } else { // current time lies within communication start/stop time, set next trigger to communication stop
+                    if((!iv->commEnabled) && mConfig->inst.rstValsCommStart)
+                        zeroValues = true;
                     iv->commEnabled = true;
                     nxtTrig = mSunset + mConfig->sun.offsetSecEvening;
                 }
@@ -348,19 +356,10 @@ void app::tickMidnight(void) {
         if(InverterStatus::OFF == iv->getStatus())
             iv->resetAlarms();
 
-        // clear max values
-        if(mConfig->inst.rstMaxValsMidNight) {
-            record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
-            for(uint8_t i = 0; i <= iv->channels; i++) {
-                uint8_t pos = iv->getPosByChFld(i, FLD_MP, rec);
-                iv->setValue(pos, rec, 0.0f);
-            }
-        }
-
         iv->historyMidnight(mTimestamp);
     }
 
-    if (mConfig->inst.rstYieldMidNight) {
+    if (mConfig->inst.rstValsAtMidNight) {
         zeroIvValues(!CHECK_AVAIL, !SKIP_YIELD_DAY);
 
         #if defined(ENABLE_MQTT)
@@ -431,6 +430,9 @@ bool app::sendIv(Inverter<> *iv) {
 void app:: zeroIvValues(bool checkAvail, bool skipYieldDay) {
     Inverter<> *iv;
     bool changed = false;
+
+    mMaxPower.reset();
+
     // set values to zero, except yields
     for (uint8_t id = 0; id < mSys.getNumInverters(); id++) {
         iv = mSys.getInverterByPos(id);
@@ -461,18 +463,21 @@ void app:: zeroIvValues(bool checkAvail, bool skipYieldDay) {
                 pos = iv->getPosByChFld(ch, fld, rec);
                 iv->setValue(pos, rec, 0.0f);
             }
-            // zero max power
-            if(!skipYieldDay) {
+            // zero max power and max temperature
+            if(mConfig->inst.rstIncludeMaxVals) {
                 pos = iv->getPosByChFld(ch, FLD_MP, rec);
                 iv->setValue(pos, rec, 0.0f);
-            }
-            iv->resetAlarms();
+                pos = iv->getPosByChFld(ch, FLD_MT, rec);
+                iv->setValue(pos, rec, 0.0f);
+                iv->resetAlarms(true);
+            } else
+                iv->resetAlarms();
             iv->doCalculations();
         }
     }
 
     if(changed)
-        payloadEventListener(RealTimeRunData_Debug, NULL);
+        payloadEventListener(RealTimeRunData_Debug, nullptr);
 }
 
 //-----------------------------------------------------------------------------

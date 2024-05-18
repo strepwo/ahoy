@@ -57,6 +57,9 @@ template<class T=float>
 T calcMaxPowerDc(Inverter<> *iv, uint8_t arg0);
 
 template<class T=float>
+T calcMaxTemperature(Inverter<> *iv, uint8_t arg0);
+
+template<class T=float>
 using func_t = T (Inverter<> *, uint8_t);
 
 template<class T=float>
@@ -126,14 +129,15 @@ struct alarm_t {
 // list of all available functions, mapped in hmDefines.h
 template<class T=float>
 const calcFunc_t<T> calcFunctions[] = {
-    { CALC_YT_CH0,   &calcYieldTotalCh0 },
-    { CALC_YD_CH0,   &calcYieldDayCh0   },
-    { CALC_UDC_CH,   &calcUdcCh         },
-    { CALC_PDC_CH0,  &calcPowerDcCh0    },
-    { CALC_EFF_CH0,  &calcEffiencyCh0   },
-    { CALC_IRR_CH,   &calcIrradiation   },
-    { CALC_MPAC_CH0, &calcMaxPowerAcCh0 },
-    { CALC_MPDC_CH,  &calcMaxPowerDc    }
+    { CALC_YT_CH0,   &calcYieldTotalCh0  },
+    { CALC_YD_CH0,   &calcYieldDayCh0    },
+    { CALC_UDC_CH,   &calcUdcCh          },
+    { CALC_PDC_CH0,  &calcPowerDcCh0     },
+    { CALC_EFF_CH0,  &calcEffiencyCh0    },
+    { CALC_IRR_CH,   &calcIrradiation    },
+    { CALC_MPAC_CH0, &calcMaxPowerAcCh0  },
+    { CALC_MPDC_CH,  &calcMaxPowerDc     },
+    { CALC_MT_CH0,   &calcMaxTemperature }
 };
 
 template <class REC_TYP>
@@ -173,6 +177,7 @@ class Inverter {
         HeuristicInv  heuristics;                           // heuristic information / logic
         uint8_t       curCmtFreq = 0;                       // current used CMT frequency, used to check if freq. was changed during runtime
         uint32_t      tsMaxAcPower = 0;                     // holds the Timestamp when the MaxAC power was seen
+        uint32_t      tsMaxTemperature = 0;                 // holds the Timestamp when the max temperature was seen
         bool          commEnabled = true;                   // 'pause night communication' sets this field to false
         history_t<REC_TYP> historyMeas;  // structure for history of some recordMeas-data (watt)
 
@@ -256,7 +261,7 @@ class Inverter {
             initAssignment(&recordAlarm, AlarmData);
             toRadioId();
             curCmtFreq = this->config->frequency; // update to frequency read from settings
-
+            resetAlarms(true);
             if (IV_UNKNOWN != ivGen){
                 initHistory();
             }
@@ -264,15 +269,15 @@ class Inverter {
 
         uint8_t getPosByChFld(uint8_t channel, uint8_t fieldId, record_t<> *rec) {
             DPRINTLN(DBG_VERBOSE, F("hmInverter.h:getPosByChFld"));
-            if(NULL != rec) {
-                uint8_t pos = 0;
-                for(; pos < rec->length; pos++) {
-                    if((rec->assign[pos].ch == channel) && (rec->assign[pos].fieldId == fieldId))
-                        break;
-                }
-                return (pos >= rec->length) ? 0xff : pos;
-            } else
+            if(nullptr == rec)
                 return 0xff;
+
+            uint8_t pos = 0;
+            for(; pos < rec->length; pos++) {
+                if((rec->assign[pos].ch == channel) && (rec->assign[pos].fieldId == fieldId))
+                    break;
+            }
+            return (pos >= rec->length) ? 0xff : pos;
         }
 
         byteAssign_t *getByteAssign(uint8_t pos, record_t<> *rec) {
@@ -388,7 +393,7 @@ class Inverter {
 
         bool setValue(uint8_t pos, record_t<> *rec, REC_TYP val) {
             DPRINTLN(DBG_VERBOSE, F("hmInverter.h:setValue"));
-            if(NULL == rec)
+            if(nullptr == rec)
                 return false;
             if(pos > rec->length)
                 return false;
@@ -830,7 +835,7 @@ class Inverter {
             }
         }
 
-        void resetAlarms() {
+        void resetAlarms(bool clearTs = false) {
             lastAlarm.fill({0, 0, 0});
             mAlarmNxtWrPos = 0;
             alarmCnt = 0;
@@ -838,6 +843,11 @@ class Inverter {
 
             memset(mOffYD, 0, sizeof(float) * 6);
             memset(mLastYD, 0, sizeof(float) * 6);
+
+            if(clearTs) {
+                tsMaxAcPower = *Timestamp;
+                tsMaxTemperature = *Timestamp;
+            }
         }
 
         bool parseGetLossRate(const uint8_t pyld[], uint8_t len) {
@@ -1226,6 +1236,24 @@ T calcMaxPowerDc(Inverter<> *iv, uint8_t arg0) {
             return dcPower;
     }
     return dcMaxPower;
+}
+
+template<class T=float>
+T calcMaxTemperature(Inverter<> *iv, uint8_t arg0) {
+    DPRINTLN(DBG_VERBOSE, F("hmInverter.h:calcMaxTemperature"));
+    // arg0 = channel
+    if(NULL != iv) {
+        record_t<> *rec = iv->getRecordStruct(RealTimeRunData_Debug);
+        T temp = iv->getChannelFieldValue(arg0, FLD_T, rec);
+        T maxTemp = iv->getChannelFieldValue(arg0, FLD_MT, rec);
+
+        if(temp > maxTemp) {
+            iv->tsMaxTemperature = *iv->Timestamp;
+            return temp;
+        }
+        return maxTemp;
+    }
+    return 0;
 }
 
 #endif /*__HM_INVERTER_H__*/
