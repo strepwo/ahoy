@@ -24,7 +24,7 @@ jobs:
       matrix:
         variant:
           - opendtufusion
-          - opendtufusion-ethernet
+          - opendtufusion-16MB
           - esp8266
           - esp8266-all
           - esp8266-minimal
@@ -33,7 +33,6 @@ jobs:
           - esp32-wroom32
           - esp32-wroom32-minimal
           - esp32-wroom32-prometheus
-          - esp32-wroom32-ethernet
           - esp32-s2-mini
           - esp32-c3-mini
     steps:
@@ -70,6 +69,11 @@ jobs:
     - name: Run PlatformIO
       run:  pio run -d src -e ${{ matrix.variant }}
 
+    - name: Compress .elf
+      uses: edgarrc/action-7z@v1
+      with:
+        args: 7z a -t7z -mx=9 src/.pio/build/${{ matrix.variant }}/firmware.elf.7z ./src/.pio/build/${{ matrix.variant }}/firmware.elf
+
     - name: Rename Firmware
       run: python scripts/getVersion.py ${{ matrix.variant }} >> $GITHUB_OUTPUT
 
@@ -88,14 +92,13 @@ jobs:
       matrix:
         variant:
           - opendtufusion-de
-          - opendtufusion-ethernet-de
+          #- opendtufusion-16MB-de #not needed, only the partions.bin is different and can be used from english build
           - esp8266-de
           - esp8266-all-de
           - esp8266-prometheus-de
           - esp8285-de
           - esp32-wroom32-de
           - esp32-wroom32-prometheus-de
-          - esp32-wroom32-ethernet-de
           - esp32-s2-mini-de
           - esp32-c3-mini-de
     steps:
@@ -131,6 +134,11 @@ jobs:
 
     - name: Run PlatformIO
       run:  pio run -d src -e ${{ matrix.variant }}
+
+    - name: Compress .elf
+      uses: edgarrc/action-7z@v1
+      with:
+        args: 7z a -t7z -mx=9 src/.pio/build/${{ matrix.variant }}/firmware.elf.7z ./src/.pio/build/${{ matrix.variant }}/firmware.elf
 
     - name: Rename Firmware
       run: python scripts/getVersion.py ${{ matrix.variant }} >> $GITHUB_OUTPUT
@@ -188,15 +196,6 @@ jobs:
       with:
         name: dev-*
 
-    - name: Create Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: dev-${{ steps.version_name.outputs.name }}
-        path: |
-          ${{ steps.version_name.outputs.name }}/*
-          manual/User_Manual.md
-          manual/Getting_Started.md
-
     - name: Deploy
       uses: nogsantos/scp-deploy@master
       with:
@@ -206,3 +205,17 @@ jobs:
         port: ${{ secrets.FW_SSH_PORT }}
         user: ${{ secrets.FW_SSH_USER }}
         key: ${{ secrets.FW_SSH_KEY }}
+
+    - name: Clean elf files (7z compressed) for Artifact
+      run: |
+        rm -f \
+          ${{ steps.version_name.outputs.name }}/*/*.elf.7z
+
+    - name: Create Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dev-${{ steps.version_name.outputs.name }}
+        path: |
+          ${{ steps.version_name.outputs.name }}/*
+          manual/User_Manual.md
+          manual/Getting_Started.md

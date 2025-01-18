@@ -11,6 +11,11 @@
 #if defined(ENABLE_MQTT)
 #ifdef ESP8266
     #include <ESP8266WiFi.h>
+    #if !defined(vSemaphoreDelete)
+        #define vSemaphoreDelete(a)
+        #define xSemaphoreTake(a, b) { while(a) { yield(); } a = true; }
+        #define xSemaphoreGive(a) { a = false; }
+    #endif
 #elif defined(ESP32)
     #include <WiFi.h>
 #endif
@@ -39,6 +44,13 @@ template<class HMSYSTEM>
 class PubMqtt {
     public:
         PubMqtt() : SendIvData() {
+            #if defined(ESP32)
+                mutex = xSemaphoreCreateBinaryStatic(&mutexBuffer);
+                xSemaphoreGive(mutex);
+            #else
+                mutex = false;
+            #endif
+
             mLastIvState.fill(InverterStatus::OFF);
             mIvLastRTRpub.fill(0);
 
@@ -50,7 +62,11 @@ class PubMqtt {
             mSendAlarm.fill(false);
         }
 
-        ~PubMqtt() { }
+        ~PubMqtt() {
+            #if defined(ESP32)
+            vSemaphoreDelete(mutex);
+            #endif
+        }
 
         void setup(IApp *app, cfgMqtt_t *cfg_mqtt, const char *devName, const char *version, HMSYSTEM *sys, uint32_t *utcTs, uint32_t *uptime) {
             mApp             = app;
@@ -62,7 +78,7 @@ class PubMqtt {
             mUptime          = uptime;
             mIntervalTimeout = 1;
 
-            SendIvData.setup(app, sys, utcTs, &mSendList);
+            SendIvData.setup(app, sys, cfg_mqtt, utcTs, &mSendList);
             SendIvData.setPublishFunc([this](const char *subTopic, const char *payload, bool retained, uint8_t qos) {
                 publish(subTopic, payload, retained, true, qos);
             });
@@ -96,6 +112,17 @@ class PubMqtt {
         }
 
         void loop() {
+            std::queue<message_s> queue;
+            xSemaphoreTake(mutex, portMAX_DELAY);
+            queue.swap(mReceiveQueue);
+            xSemaphoreGive(mutex);
+
+            while (!queue.empty()) {
+                message_s *entry = &queue.front();
+                handleMessage(entry->topic, entry->payload, entry->len, entry->index, entry->total);
+                queue.pop();
+            }
+
             SendIvData.loop();
 
             #if defined(ESP8266)
@@ -134,7 +161,10 @@ class PubMqtt {
             publish(subtopics[MQTT_UPTIME], mVal.data());
             publish(subtopics[MQTT_RSSI], String(WiFi.RSSI()).c_str());
             publish(subtopics[MQTT_FREE_HEAP], String(ESP.getFreeHeap()).c_str());
-            #ifndef ESP32
+            #if defined(ESP32)
+            snprintf(mVal.data(), mVal.size(), "%.2f", ah::readTemperature());
+            publish(subtopics[MQTT_TEMP_SENS_C], mVal.data());
+            #else
             publish(subtopics[MQTT_HEAP_FRAG], String(ESP.getHeapFragmentation()).c_str());
             #endif
         }
@@ -261,6 +291,9 @@ class PubMqtt {
             tickerMinute();
             publish(mLwtTopic.data(), mqttStr[MQTT_STR_LWT_CONN], true, false);
 
+            snprintf(mVal.data(), mVal.size(), "ctrl/restart_ahoy");
+            subscribe(mVal.data());
+
             for(uint8_t i = 0; i < MAX_NUM_INVERTERS; i++) {
                 snprintf(mVal.data(), mVal.size(), "ctrl/limit/%d", i);
                 subscribe(mVal.data(), QOS_2);
@@ -301,6 +334,14 @@ class PubMqtt {
         void onMessage(const espMqttClientTypes::MessageProperties& properties, const char* topic, const uint8_t* payload, size_t len, size_t index, size_t total) {
             if(len == 0)
                 return;
+
+            xSemaphoreTake(mutex, portMAX_DELAY);
+            mReceiveQueue.push(message_s(topic, payload, len, index, total));
+            xSemaphoreGive(mutex);
+
+        }
+
+        inline void handleMessage(const char* topic, const uint8_t* payload, size_t len, size_t index, size_t total) {
             DPRINT(DBG_INFO, mqttStr[MQTT_STR_GOT_TOPIC]);
             DBGPRINTLN(String(topic));
             if(NULL == mSubscriptionCb)
@@ -354,9 +395,9 @@ class PubMqtt {
                 pos++;
             }
 
-            /*char out[128];
+            char out[128];
             serializeJson(root, out, 128);
-            DPRINTLN(DBG_INFO, "json: " + String(out));*/
+            DPRINTLN(DBG_INFO, "json: " + String(out));
             (mSubscriptionCb)(root);
 
             mRxCnt++;
@@ -371,26 +412,25 @@ class PubMqtt {
             bool total = (mDiscovery.lastIvId == MAX_NUM_INVERTERS);
 
             Inverter<> *iv = mSys->getInverterByPos(mDiscovery.lastIvId);
-            record_t<> *rec = NULL;
-            if (NULL != iv) {
+            record_t<> *rec = nullptr;
+            if (nullptr != iv) {
                 rec = iv->getRecordStruct(RealTimeRunData_Debug);
                 if(0 == mDiscovery.sub)
-                mDiscovery.foundIvCnt++;
+                    mDiscovery.foundIvCnt++;
             }
 
-            if ((NULL != iv) || total) {
+            if ((nullptr != iv) || total) {
                 if (!total) {
                     doc[F("name")] = iv->config->name;
                     doc[F("ids")] = String(iv->config->serial.u64, HEX);
                     doc[F("mdl")] = iv->config->name;
-                }
-                else {
+                } else {
                     doc[F("name")] = node_id;
                     doc[F("ids")] = node_id;
                     doc[F("mdl")] = node_id;
                 }
 
-                doc[F("cu")] = F("http://") + String(WiFi.localIP().toString());
+                doc[F("cu")] = F("http://") +  mApp->getIp();
                 doc[F("mf")] = F("Hoymiles");
                 JsonObject deviceObj = doc.as<JsonObject>(); // deviceObj is only pointer!?
 
@@ -403,18 +443,21 @@ class PubMqtt {
                 uniq_id.fill(0);
                 buf.fill(0);
                 const char *devCls, *stateCls;
+
                 if (!total) {
                     if (rec->assign[mDiscovery.sub].ch == CH0)
                         snprintf(name.data(), name.size(), "%s", iv->getFieldName(mDiscovery.sub, rec));
                     else
                         snprintf(name.data(), name.size(), "CH%d_%s", rec->assign[mDiscovery.sub].ch, iv->getFieldName(mDiscovery.sub, rec));
-                    snprintf(topic.data(), name.size(), "/ch%d/%s", rec->assign[mDiscovery.sub].ch, iv->getFieldName(mDiscovery.sub, rec));
+                    if (!mCfgMqtt->json)
+                        snprintf(topic.data(), name.size(), "/ch%d/%s", rec->assign[mDiscovery.sub].ch, iv->getFieldName(mDiscovery.sub, rec));
+                    else
+                        snprintf(topic.data(), name.size(), "/ch%d", rec->assign[mDiscovery.sub].ch);
                     snprintf(uniq_id.data(), uniq_id.size(), "ch%d_%s", rec->assign[mDiscovery.sub].ch, iv->getFieldName(mDiscovery.sub, rec));
 
                     devCls = getFieldDeviceClass(rec->assign[mDiscovery.sub].fieldId);
                     stateCls = getFieldStateClass(rec->assign[mDiscovery.sub].fieldId);
                 }
-
                 else { // total values
                     snprintf(name.data(), name.size(), "Total %s", fields[fldTotal[mDiscovery.sub]]);
                     snprintf(topic.data(), topic.size(), "/%s", fields[fldTotal[mDiscovery.sub]]);
@@ -426,24 +469,43 @@ class PubMqtt {
                 DynamicJsonDocument doc2(512);
                 constexpr static const char* unitTotal[] = {"W", "kWh", "Wh", "W"};
                 doc2[F("name")] = String(name.data());
-                doc2[F("stat_t")] = String(mCfgMqtt->topic) + "/" + ((!total) ? String(iv->config->name) : "total" ) + String(topic.data());
+
+                if (mCfgMqtt->json) {
+                    if (total) {
+                        doc2[F("val_tpl")] = String("{{ value_json.") + fields[fldTotal[mDiscovery.sub]] + String(" }}");
+                        doc2[F("stat_t")] = String(mCfgMqtt->topic) + "/" + "total";
+                    }
+                    else {
+                        doc2[F("val_tpl")] = String("{{ value_json.") + iv->getFieldName(mDiscovery.sub, rec) + String(" }}");
+                        doc2[F("stat_t")] = String(mCfgMqtt->topic) + "/" + String(iv->config->name) + String(topic.data());
+                    }
+                }
+                else {
+                    doc2[F("stat_t")] = String(mCfgMqtt->topic) + "/" + ((!total) ? String(iv->config->name) : "total" ) + String(topic.data());
+                }
                 doc2[F("unit_of_meas")] = ((!total) ? (iv->getUnit(mDiscovery.sub, rec)) : (unitTotal[mDiscovery.sub]));
                 doc2[F("uniq_id")] = ((!total) ? (String(iv->config->serial.u64, HEX)) : (node_id)) + "_" + uniq_id.data();
                 doc2[F("dev")] = deviceObj;
+
                 if (!(String(stateCls) == String("total_increasing")))
                     doc2[F("exp_aft")] = MQTT_INTERVAL + 5;  // add 5 sec if connection is bad or ESP too slow @TODO: stimmt das wirklich als expire!?
-                if (devCls != NULL)
+                if (devCls != nullptr)
                     doc2[F("dev_cla")] = String(devCls);
-                if (stateCls != NULL)
+                if (stateCls != nullptr)
                     doc2[F("stat_cla")] = String(stateCls);
 
                 if (!total)
                     snprintf(topic.data(), topic.size(), "%s/sensor/%s/ch%d_%s/config", MQTT_DISCOVERY_PREFIX, iv->config->name, rec->assign[mDiscovery.sub].ch, iv->getFieldName(mDiscovery.sub, rec));
                 else // total values
                     snprintf(topic.data(), topic.size(), "%s/sensor/%s/total_%s/config", MQTT_DISCOVERY_PREFIX, node_id.c_str(), fields[fldTotal[mDiscovery.sub]]);
+
                 size_t size = measureJson(doc2) + 1;
                 serializeJson(doc2, buf.data(), size);
-                if(FLD_EVT != rec->assign[mDiscovery.sub].fieldId)
+
+                if(nullptr != rec) {
+                    if(FLD_EVT != rec->assign[mDiscovery.sub].fieldId)
+                        publish(topic.data(), buf.data(), true, false);
+                } else if(total)
                     publish(topic.data(), buf.data(), true, false);
 
                 if(++mDiscovery.sub == ((!total) ? (rec->length) : 4)) {
@@ -564,6 +626,9 @@ class PubMqtt {
         }
 
         void sendData(Inverter<> *iv, uint8_t curInfoCmd) {
+            if (mCfgMqtt->json)
+                return;
+
             record_t<> *rec = iv->getRecordStruct(curInfoCmd);
 
             uint32_t lastTs = iv->getLastTs(rec);
@@ -610,12 +675,77 @@ class PubMqtt {
     private:
         enum {MQTT_STATUS_OFFLINE = 0, MQTT_STATUS_PARTIAL, MQTT_STATUS_ONLINE};
 
+        struct message_s
+        {
+            char *topic;
+            uint8_t *payload;
+            size_t len;
+            size_t index;
+            size_t total;
+
+            message_s()
+            : topic { nullptr }
+            , payload { nullptr }
+            , len { 0 }
+            , index { 0 }
+            , total { 0 }
+            {}
+
+            message_s(const char* topic, const uint8_t* payload, size_t len, size_t index, size_t total)
+            {
+                uint8_t topic_len = strlen(topic) + 1;
+                this->topic = new char[topic_len];
+                this->payload = new uint8_t[len];
+
+                memcpy(this->topic, topic, topic_len);
+                memcpy(this->payload, payload, len);
+                this->len = len;
+                this->index = index;
+                this->total = total;
+            }
+
+            message_s(const message_s &) = delete;
+
+            message_s(message_s && other) : message_s {}
+            {
+                this->swap( other );
+            }
+
+            ~message_s()
+            {
+                delete[] this->topic;
+                delete[] this->payload;
+            }
+
+            message_s  &operator = (const message_s &) = delete;
+
+            message_s  &operator = (message_s &&other)
+            {
+                this->swap(other);
+                return *this;
+            }
+
+            void swap(message_s &other)
+            {
+                std::swap(this->topic, other.topic);
+                std::swap(this->payload, other.payload);
+                std::swap(this->len, other.len);
+                std::swap(this->index, other.index);
+                std::swap(this->total, other.total);
+            }
+
+        };
+
     private:
         espMqttClient mClient;
         cfgMqtt_t *mCfgMqtt = nullptr;
         IApp *mApp;
         #if defined(ESP8266)
         WiFiEventHandler mHWifiCon, mHWifiDiscon;
+        volatile bool mutex;
+        #else
+        SemaphoreHandle_t mutex;
+        StaticSemaphore_t mutexBuffer;
         #endif
 
         HMSYSTEM *mSys = nullptr;
@@ -630,6 +760,8 @@ class PubMqtt {
         std::array<InverterStatus, MAX_NUM_INVERTERS> mLastIvState;
         std::array<uint32_t, MAX_NUM_INVERTERS> mIvLastRTRpub;
         uint16_t mIntervalTimeout = 0;
+
+        std::queue<message_s> mReceiveQueue;
 
         // last will topic and payload must be available through lifetime of 'espMqttClient'
         std::array<char, (MQTT_TOPIC_LEN + 5)> mLwtTopic;

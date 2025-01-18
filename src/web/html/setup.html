@@ -56,8 +56,6 @@
                                 <div class="col-12 col-sm-3 my-2">{#AP_PWD}</div>
                                 <div class="col-12 col-sm-9"><input type="text" name="ap_pwd" minlength="8" /></div>
                             </div>
-                            <!--IF_ETHERNET-->
-                            <!--ELSE-->
                             <div class="row mb-2 mb-sm-3">
                                 <div class="col-12 col-sm-3 my-2">SSID</div>
                                 <div class="col-12 col-sm-9">
@@ -73,7 +71,6 @@
                                 <div class="col-12 col-sm-3 my-2">{#PASSWORD}</div>
                                 <div class="col-12 col-sm-9"><input type="password" name="pwd" value="{PWD}"/></div>
                             </div>
-                            <!--ENDIF_ETHERNET-->
                         </fieldset>
                         <fieldset class="mb-4">
                             <legend class="des">{#STATIC_IP}</legend>
@@ -238,10 +235,14 @@
                                 <div class="col-12 col-sm-3 my-2">Topic</div>
                                 <div class="col-12 col-sm-9"><input type="text" name="mqttTopic" pattern="[\-\+A-Za-z0-9\.\/#\$%&=_]+" title="Invalid input" /></div>
                             </div>
+                            <div class="row mb-3">
+                                <div class="col-12 col-sm-3 my-2">{#MQTT_JSON}</div>
+                                <div class="col-12 col-sm-9"><input type="checkbox" name="mqttJson" /></div>
+                            </div>
                             <p class="des">{#MQTT_NOTE}</p>
                             <div class="row mb-3">
                                 <div class="col-12 col-sm-3 my-2">{#INTERVAL}</div>
-                                <div class="col-12 col-sm-9"><input tyCMT2300Ape="number" name="mqttInterval" title="Invalid input" /></div>
+                                <div class="col-12 col-sm-9"><input type="number" name="mqttInterval" title="Invalid input" /></div>
                             </div>
                             <div class="row mb-3">
                                 <div class="col-12 col-sm-3 my-2">Discovery Config (homeassistant)</div>
@@ -456,24 +457,24 @@
                 [1,  "GPIO1"],
                 [2,  "GPIO2"],
                 [3,  "GPIO3"],
-                [4,  "GPIO4"],
-                [5,  "GPIO5"],
-                [6,  "GPIO6"],
+                [4,  "GPIO4 (CMT CSB)"],
+                [5,  "GPIO5 (CMT SDIO)"],
+                [6,  "GPIO6 (CMT SCLK)"],
                 [7,  "GPIO7"],
-                [8,  "GPIO8"],
-                [9,  "GPIO9"],
-                [10, "GPIO10"],
-                [11, "GPIO11"],
-                [12, "GPIO12"],
-                [13, "GPIO13"],
-                [14, "GPIO14"],
+                [8,  "GPIO8 (CMT GPIO3)"],
+                [9,  "GPIO9 (DATA display)"],
+                [10, "GPIO10 (SCK display)"],
+                [11, "GPIO11 (CS display)"],
+                [12, "GPIO12 (DC display)"],
+                [13, "GPIO13 (RST display)"],
+                [14, "GPIO14 (BUSY display)"],
                 [15, "GPIO15"],
                 [16, "GPIO16"],
                 [17, "GPIO17"],
                 [18, "GPIO18"],
                 [19, "GPIO19 ({#PIN_DONT_USE} - USB-)"],
                 [20, "GPIO20 ({#PIN_DONT_USE} - USB+)"],
-                [21, "GPIO21"],
+                [21, "GPIO21 (CMT FCSB)"],
                 [26, "GPIO26 (PSRAM - {#PIN_NOT_AVAIL})"],
                 [27, "GPIO27 (FLASH - {#PIN_NOT_AVAIL})"],
                 [28, "GPIO28 (FLASH - {#PIN_NOT_AVAIL})"],
@@ -483,20 +484,20 @@
                 [32, "GPIO32 (FLASH - {#PIN_NOT_AVAIL})"],
                 [33, "GPIO33 (not exposed on S3-WROOM modules)"],
                 [34, "GPIO34 (not exposed on S3-WROOM modules)"],
-                [35, "GPIO35"],
-                [36, "GPIO36"],
-                [37, "GPIO37"],
-                [38, "GPIO38"],
-                [39, "GPIO39"],
-                [40, "GPIO40"],
-                [41, "GPIO41"],
-                [42, "GPIO42"],
-                [43, "GPIO43"],
-                [44, "GPIO44"],
+                [35, "GPIO35 (MOSI NRF24)"],
+                [36, "GPIO36 (SCK NRF24)"],
+                [37, "GPIO37 (CSN NRF24)"],
+                [38, "GPIO38 (CE NRF24)"],
+                [39, "GPIO39 (SCK ETH)"],
+                [40, "GPIO40 (MOSI ETH)"],
+                [41, "GPIO41 (MISO ETH)"],
+                [42, "GPIO42 (CS ETH)"],
+                [43, "GPIO43 (RST ETH)"],
+                [44, "GPIO44 (INT ETH)"],
                 [45, "GPIO45 ({#PIN_DONT_USE} - STRAPPING PIN)"],
                 [46, "GPIO46 ({#PIN_DONT_USE} - STRAPPING PIN)"],
-                [47, "GPIO47"],
-                [48, "GPIO48"],
+                [47, "GPIO47 (IRQ NRF24)"],
+                [48, "GPIO48 (MISO NRF24)"],
             ];
             /*ENDIF_ESP32-S3*/
             /*IF_ESP32-C3*/
@@ -681,27 +682,39 @@
             }
 
             function parseSys(obj) {
-                /*IF_ETHERNET*/
-                for(var i of [["device", "device_name"], ["ap_pwd", "ap_pwd"]])
-                    document.getElementsByName(i[0])[0].value = obj[i[1]];
-                /*ELSE*/
-                for(var i of [["device", "device_name"], ["ssid", "ssid"], ["ap_pwd", "ap_pwd"]])
-                    document.getElementsByName(i[0])[0].value = obj[i[1]];
-                document.getElementsByName("hidd")[0].checked = obj["hidd"];
-                /*ENDIF_ETHERNET*/
-                document.getElementsByName("darkMode")[0].checked = obj["dark_mode"];
-                document.getElementsByName("schedReboot")[0].checked = obj["sched_reboot"];
+                document.getElementsByName("device")[0].value = obj.device_name;
+                for(var i of [["ssid", "ssid"], ["ap_pwd", "ap_pwd"]])
+                    document.getElementsByName(i[0])[0].value = obj.network[i[1]];
+                document.getElementsByName("hidd")[0].checked = obj.network.hidd;
+
+                document.getElementsByName("darkMode")[0].checked = obj.dark_mode;
+                document.getElementsByName("schedReboot")[0].checked = obj.sched_reboot;
                 e = document.getElementsByName("adminpwd")[0];
-                if(!obj["pwd_set"])
+                if(!obj.pwd_set)
                     e.value = "";
                 var d = document.getElementById("prot_mask");
                 var a = ["Index", "{#NAV_LIVE}", "{#NAV_WEBSERIAL}", "{#NAV_SETTINGS}", "Update", "System", "{#NAV_HISTORY}"];
                 var el = [];
                 for(var i = 0; i < 7; i++) {
-                    var chk = ((obj["prot_mask"] & (1 << i)) == (1 << i));
+                    var chk = ((obj.prot_mask & (1 << i)) == (1 << i));
                     el.push(mlCb("protMask" + i, a[i], chk))
                 }
                 d.append(...el);
+            }
+
+            function parseGeneric(obj) {
+                parseNav(obj)
+                parseESP(obj)
+                parseRssi(obj)
+                parseTitle(obj)
+
+                if(0 != obj.cst_lnk.length) {
+                    document.getElementsByName("cstLnk")[0].value = obj.cst_lnk
+                    document.getElementsByName("cstLnkTxt")[0].value = obj.cst_lnk_txt
+                }
+
+                ts = obj.ts_now;
+                window.setInterval("tick()", 1000);
 
                 var tz = []
                 for(i = 0; i < 24; i += 0.5)
@@ -709,21 +722,6 @@
                 document.getElementById("timezone").append(sel("timezone", tz, obj.timezone + 12))
                 var region = [[0, "Europe (860 - 870 MHz)"], [1, "USA, Indonesia (905 - 925 MHz)"], [2, "Brazil (915 - 928 MHz)"]]
                 document.getElementById("region").append(sel("region", region, obj.region))
-
-            }
-
-            function parseGeneric(obj) {
-                parseNav(obj);
-                parseESP(obj);
-                parseRssi(obj);
-
-                if(0 != obj.cst_lnk.length) {
-                    document.getElementsByName("cstLnk")[0].value = obj.cst_lnk
-                    document.getElementsByName("cstLnkTxt")[0].value = obj.cst_lnk_txt
-                }
-
-                ts = obj["ts_now"];
-                window.setInterval("tick()", 1000);
             }
 
             function parseStaticIp(obj) {
@@ -738,7 +736,7 @@
                 lines.push(ml("tr", {}, [
                     ml("th", {style: "width: 10%; text-align: center;"}, ""),
                     ml("th", {}, "Name"),
-                    ml("th", {}, "Serial"),
+                    ml("th", {class: "d-none d-sm-cell"}, "Serial"),
                     ml("th", {style: "width: 10%; text-align: center;"}, "{#INV_EDIT}"),
                     ml("th", {style: "width: 10%; text-align: center;"}, "{#INV_DELETE}")
                 ]));
@@ -747,7 +745,7 @@
                     lines.push(ml("tr", {}, [
                         ml("td", {}, badge(obj.inverter[i].enabled, (obj.inverter[i].enabled) ? "{#ENABLED}" : "{#DISABLED}")),
                         ml("td", {}, obj.inverter[i].name),
-                        ml("td", {}, String(obj.inverter[i].serial)),
+                        ml("td", {class: "d-none d-sm-cell"}, String(obj.inverter[i].serial)),
                         ml("td", {style: "text-align: center;", onclick: function() {ivModal(obj.inverter[i]);}}, svg(iconGear, 25, 25, "icon icon-fg pointer")),
                         ml("td", {style: "text-align: center; ", onclick: function() {ivDel(obj.inverter[i]);}}, svg(iconDel, 25, 25, "icon icon-fg pointer"))
                     ]));
@@ -819,7 +817,8 @@
                         ml("input", {type: "hidden", name: "isnrf"}, null),
                         ml("div", {id: "setcmt"}, [
                             divRow("{#INV_FREQUENCY}", sel("freq", esp32cmtFreq, obj.freq)),
-                            divRow("{#INV_POWER_LEVEL}", sel("cmtpa", esp32cmtPa, obj.pa))
+                            divRow("{#INV_POWER_LEVEL}", sel("cmtpa", esp32cmtPa, obj.pa)),
+                            divRow("{#INV_SEARCH}", ml("input", {type: "button", value: "{#BTN_SEARCH}", class: "btn", onclick: function() { cmtSearch(); }}, null))
                         ]),
                         ml("div", {id: "setnrf"},
                             divRow("{#INV_POWER_LEVEL}", sel("nrfpa", nrfPa, obj.pa))
@@ -875,11 +874,16 @@
                 ser.dispatchEvent(new Event('change'));
 
                 function ivSave() {
-                    var o = new Object();
+                    var o = {}
                     o.cmd  = "save_iv"
                     o.token = "*"
                     o.id   = obj.id
-                    o.ser  = parseInt(document.getElementsByName("ser")[0].value, 16);
+
+                    let sn = document.getElementsByName("ser")[0].value
+                    if(sn[0] == 'A')
+                        sn = convHerf(sn)
+                    o.ser  = parseInt(sn, 16)
+
                     o.name = document.getElementsByName("name")[0].value;
                     o.en   = document.getElementsByName("enable")[0].checked;
                     o.ch = [];
@@ -897,6 +901,40 @@
                     o.freq = document.getElementsByName("freq")[0].value;
                     o.disnightcom = document.getElementsByName("disnightcom")[0].checked;
                     getAjax("/api/setup", cb, "POST", JSON.stringify(o));
+                }
+
+                function cmtSearch() {
+                    var o = {}
+                    o.cmd = "cmt_search"
+                    o.token = "*"
+                    o.id = obj.id
+                    o.to_ch = document.getElementsByName("freq")[0].value;
+
+                    getAjax("/api/ctrl", cb, "POST", JSON.stringify(o));
+                }
+
+                function convHerf(sn) {
+                    let sn_int = 0n;
+                    const CHARS = "0123456789ABCDEFGHJKLMNPRSTUVWXY";
+
+                    for (let i = 0; i < 9; ++i) {
+                        const pos = CHARS.indexOf(sn[i])
+                        const shift = 42 - 5 * i - (i <= 2 ? 0 : 2)
+                        sn_int |= BigInt(pos) << BigInt(shift)
+                    }
+
+                    let first4Hex = (sn_int >> 32n) & 0xFFFFn
+
+                    if (first4Hex === 0x2841n)
+                        first4Hex = 0x1121n
+                    else if (first4Hex === 0x2821n)
+                        first4Hex = 0x1141n
+                    else if (first4Hex === 0x2801n)
+                        first4Hex = 0x1161n
+
+                    sn_int = (sn_int & ~(0xFFFFn << 32n)) | (first4Hex << 32n);
+
+                    return sn_int.toString(16)
                 }
 
                 function cb(obj2) {
@@ -920,6 +958,7 @@
                 function del() {
                     var o = new Object();
                     o.cmd  = "save_iv";
+                    o.token = "*"
                     o.id   = obj.id;
                     o.ser  = 0;
                     o.name = "";
@@ -946,6 +985,7 @@
             function parseMqtt(obj) {
                 for(var i of [["Addr", "broker"], ["Port", "port"], ["ClientId", "clientId"], ["User", "user"], ["Pwd", "pwd"], ["Topic", "topic"], ["Interval", "interval"]])
                     document.getElementsByName("mqtt"+i[0])[0].value = obj[i[1]];
+                document.getElementsByName("mqttJson")[0].checked = obj["json"];
                 document.getElementsByName("retain")[0].checked = obj.retain
             }
 
@@ -1301,23 +1341,23 @@
 
             function parse(root) {
                 if(null != root) {
-                    parseGeneric(root["generic"]);
-                    parseSys(root["system"]);
-                    parseStaticIp(root["static_ip"]);
-                    parseMqtt(root["mqtt"]);
-                    parseNtp(root["ntp"]);
-                    parseSun(root["sun"]);
+                    parseGeneric(root.generic);
+                    parseSys(root.system);
+                    parseStaticIp(root.static_ip);
+                    parseMqtt(root.mqtt);
+                    parseNtp(root.ntp);
+                    parseSun(root.sun);
                     parsePinout(root.pinout);
-                    parseNrfRadio(root["radioNrf"], root["pinout"]);
+                    parseNrfRadio(root.radioNrf, root.pinout);
                     /*IF_ESP32*/
                     parseCmtRadio(root.radioCmt);
                     /*ENDIF_ESP32*/
                     /*IF_ETHERNET*/
                     parseEth(root.eth)
                     /*ENDIF_ETHERNET*/
-                    parseSerial(root["serial"]);
+                    parseSerial(root.serial);
                     /*IF_PLUGIN_DISPLAY*/
-                    parseDisplay(root["display"], root["system"]["esp_type"], root["system"]);
+                    parseDisplay(root.display, root.system.esp_type, root.system);
                     /*ENDIF_PLUGIN_DISPLAY*/
                     getAjax("/api/inverter/list", parseIv);
                 }

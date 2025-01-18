@@ -7,11 +7,6 @@
 #define __WEB_API_H__
 
 #include "../utils/dbg.h"
-#ifdef ESP32
-#include "AsyncTCP.h"
-#else
-#include "ESPAsyncTCP.h"
-#endif
 #include "../appInterface.h"
 #include "../hm/hmSystem.h"
 #include "../utils/helper.h"
@@ -55,6 +50,9 @@ class RestApi {
             mSrv->on("/api", HTTP_GET,  std::bind(&RestApi::onApi,         this, std::placeholders::_1));
 
             mSrv->on("/get_setup", HTTP_GET,  std::bind(&RestApi::onDwnldSetup, this, std::placeholders::_1));
+            #if defined(ESP32)
+            mSrv->on("/coredump", HTTP_GET,  std::bind(&RestApi::getCoreDump, this, std::placeholders::_1));
+            #endif
         }
 
         uint32_t getTimezoneOffset(void) {
@@ -78,9 +76,19 @@ class RestApi {
             #ifndef ESP32
             mHeapFreeBlk = ESP.getMaxFreeBlockSize();
             mHeapFrag = ESP.getHeapFragmentation();
+            #else
+            mHeapFreeBlk = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
+            if(mHeapFree > 0)
+                mHeapFrag = 100 - ((mHeapFreeBlk * 100) / mHeapFree);
+            else
+                mHeapFrag = 0;
             #endif
 
+            #if defined(ESP32)
+            AsyncJsonResponse* response = new AsyncJsonResponse(false, 8000);
+            #else
             AsyncJsonResponse* response = new AsyncJsonResponse(false, 6000);
+            #endif
             JsonObject root = response->getRoot();
 
             String path = request->url().substring(5);
@@ -98,10 +106,8 @@ class RestApi {
             else if(path == "inverter/list")  getInverterList(root);
             else if(path == "index")          getIndex(request, root);
             else if(path == "setup")          getSetup(request, root);
-            #if !defined(ETHERNET)
             else if(path == "setup/networks") getNetworks(root);
             else if(path == "setup/getip")    getIp(root);
-            #endif /* !defined(ETHERNET) */
             else if(path == "live")           getLive(request,root);
             #if defined(ENABLE_HISTORY)
             else if (path == "powerHistory")  getPowerHistory(request, root, HistoryStorageType::POWER);
@@ -296,10 +302,8 @@ class RestApi {
             ep[F("generic")]          = url + F("generic");
             ep[F("index")]            = url + F("index");
             ep[F("setup")]            = url + F("setup");
-            #if !defined(ETHERNET)
             ep[F("setup/networks")]   = url + F("setup/networks");
             ep[F("setup/getip")]      = url + F("setup/getip");
-            #endif /* !defined(ETHERNET) */
             ep[F("system")]           = url + F("system");
             ep[F("live")]             = url + F("live");
             #if defined(ENABLE_HISTORY)
@@ -354,17 +358,46 @@ class RestApi {
             fp.close();
         }
 
+        #if defined(ESP32)
+        void getCoreDump(AsyncWebServerRequest *request) {
+            const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, "coredump");
+            if (partition != NULL) {
+                size_t size = partition->size;
+
+                AsyncWebServerResponse *response = request->beginResponse("application/octet-stream", size, [size, partition](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                    if((index + maxLen) > size)
+                        maxLen = size - index;
+
+                    if (ESP_OK != esp_partition_read(partition, index, buffer, maxLen))
+                        DPRINTLN(DBG_ERROR, F("can't read partition"));
+
+                    return maxLen;
+                });
+
+                String filename = ah::getDateTimeStrFile(gTimezone.toLocal(mApp->getTimestamp()));
+                filename += "_v" + String(mApp->getVersion());
+                filename += "_" + String(ENV_NAME);
+
+                response->addHeader("Content-Description", "File Transfer");
+                response->addHeader("Content-Disposition", "attachment; filename=" + filename + "_coredump.bin");
+                request->send(response);
+            } else {
+                AsyncWebServerResponse *response = request->beginResponse(200, F("application/json; charset=utf-8"), "{}");
+                request->send(response);
+            }
+        }
+        #endif
+
         void getGeneric(AsyncWebServerRequest *request, JsonObject obj) {
             mApp->resetLockTimeout();
-            #if !defined(ETHERNET)
             obj[F("wifi_rssi")]   = (WiFi.status() != WL_CONNECTED) ? 0 : WiFi.RSSI();
-            #endif
             obj[F("ts_uptime")]   = mApp->getUptime();
             obj[F("ts_now")]      = mApp->getTimestamp();
             obj[F("version")]     = String(mApp->getVersion());
             obj[F("modules")]     = String(mApp->getVersionModules());
             obj[F("build")]       = String(AUTO_GIT_HASH);
             obj[F("env")]         = String(ENV_NAME);
+            obj[F("host")]        = mConfig->sys.deviceName;
             obj[F("menu_prot")]   = mApp->isProtected(request->client()->remoteIP().toString().c_str(), "", true);
             obj[F("menu_mask")]   = (uint16_t)(mConfig->sys.protectionMask );
             obj[F("menu_protEn")] = (bool) (mConfig->sys.adminPwd[0] != '\0');
@@ -381,57 +414,22 @@ class RestApi {
         }
 
         void getSysInfo(AsyncWebServerRequest *request, JsonObject obj) {
-            obj[F("ap_pwd")]       = mConfig->sys.apPwd;
-            #if !defined(ETHERNET)
-            obj[F("ssid")]         = mConfig->sys.stationSsid;
-            obj[F("hidd")]         = mConfig->sys.isHidden;
-            obj[F("mac")]          = WiFi.macAddress();
-            obj[F("wifi_channel")] = WiFi.channel();
-            #endif /* !defined(ETHERNET) */
             obj[F("device_name")]  = mConfig->sys.deviceName;
             obj[F("dark_mode")]    = (bool)mConfig->sys.darkMode;
             obj[F("sched_reboot")] = (bool)mConfig->sys.schedReboot;
 
-            obj[F("hostname")]     = mConfig->sys.deviceName;
             obj[F("pwd_set")]      = (strlen(mConfig->sys.adminPwd) > 0);
             obj[F("prot_mask")]    = mConfig->sys.protectionMask;
 
-            obj[F("sdk")]          = ESP.getSdkVersion();
-            obj[F("cpu_freq")]     = ESP.getCpuFreqMHz();
-            obj[F("heap_free")]    = mHeapFree;
-            obj[F("sketch_total")] = ESP.getFreeSketchSpace();
-            obj[F("sketch_used")]  = ESP.getSketchSize() / 1024; // in kb
-            getGeneric(request, obj);
-
+            getGeneric(request, obj.createNestedObject(F("generic")));
+            getChipInfo(obj.createNestedObject(F("chip")));
             getRadioNrf(obj.createNestedObject(F("radioNrf")));
+            getMqttInfo(obj.createNestedObject(F("mqtt")));
+            getNetworkInfo(obj.createNestedObject(F("network")));
+            getMemoryInfo(obj.createNestedObject(F("memory")));
             #if defined(ESP32)
             getRadioCmtInfo(obj.createNestedObject(F("radioCmt")));
             #endif
-            getMqttInfo(obj.createNestedObject(F("mqtt")));
-
-        #if defined(ESP32)
-            obj[F("chip_revision")] = ESP.getChipRevision();
-            obj[F("chip_model")]    = ESP.getChipModel();
-            obj[F("chip_cores")]    = ESP.getChipCores();
-            obj[F("heap_total")]    = ESP.getHeapSize();
-            //obj[F("core_version")]  = F("n/a");
-            //obj[F("flash_size")]    = F("n/a");
-            //obj[F("heap_frag")]     = F("n/a");
-            //obj[F("max_free_blk")]  = F("n/a");
-            //obj[F("reboot_reason")] = F("n/a");
-        #else
-            //obj[F("heap_total")]    = F("n/a");
-            //obj[F("chip_revision")] = F("n/a");
-            //obj[F("chip_model")]    = F("n/a");
-            //obj[F("chip_cores")]    = F("n/a");
-            obj[F("heap_frag")]     = mHeapFrag;
-            obj[F("max_free_blk")]  = mHeapFreeBlk;
-            obj[F("core_version")]  = ESP.getCoreVersion();
-            obj[F("flash_size")]    = ESP.getFlashChipRealSize() / 1024; // in kb
-            obj[F("reboot_reason")] = ESP.getResetReason();
-        #endif
-            //obj[F("littlefs_total")] = LittleFS.totalBytes();
-            //obj[F("littlefs_used")] = LittleFS.usedBytes();
 
             /*uint8_t max;
             mApp->getSchedulerInfo(&max);
@@ -441,8 +439,13 @@ class RestApi {
         void getHtmlSystem(AsyncWebServerRequest *request, JsonObject obj) {
             getSysInfo(request, obj.createNestedObject(F("system")));
             getGeneric(request, obj.createNestedObject(F("generic")));
+            #if defined(ESP32)
+            char tmp[300];
+            snprintf(tmp, 300, "<a href=\"/factory\" class=\"btn\">%s</a><br/><br/><a href=\"/reboot\" class=\"btn\">%s</a><br/><br/><a href=\"/coredump\" class=\"btn\">%s</a>", FACTORY_RESET, BTN_REBOOT, BTN_COREDUMP);
+            #else
             char tmp[200];
             snprintf(tmp, 200, "<a href=\"/factory\" class=\"btn\">%s</a><br/><br/><a href=\"/reboot\" class=\"btn\">%s</a>", FACTORY_RESET, BTN_REBOOT);
+            #endif
             obj[F("html")] = String(tmp);
         }
 
@@ -455,8 +458,8 @@ class RestApi {
 
         void getHtmlReboot(AsyncWebServerRequest *request, JsonObject obj) {
             getGeneric(request, obj.createNestedObject(F("generic")));
-            #if defined(ETHERNET) && defined(CONFIG_IDF_TARGET_ESP32S3)
-            obj[F("refresh")] = 5;
+            #if defined(ETHERNET)
+            obj[F("refresh")] = (mConfig->sys.eth.enabled) ? 5 : 20;
             #else
             obj[F("refresh")] = 20;
             #endif
@@ -469,8 +472,8 @@ class RestApi {
             obj[F("pending")] = (bool)mApp->getSavePending();
             obj[F("success")] = (bool)mApp->getLastSaveSucceed();
             obj[F("reboot")] = (bool)mApp->getShouldReboot();
-            #if defined(ETHERNET) && defined(CONFIG_IDF_TARGET_ESP32S3)
-            obj[F("reload")] = 5;
+            #if defined(ETHERNET)
+            obj[F("reload")] = (mConfig->sys.eth.enabled) ? 5 : 20;
             #else
             obj[F("reload")] = 20;
             #endif
@@ -487,7 +490,7 @@ class RestApi {
             mApp->setRebootFlag();
             obj[F("html")] = F("Erase settings: success");
             #if defined(ETHERNET) && defined(CONFIG_IDF_TARGET_ESP32S3)
-            obj[F("reload")] = 5;
+            obj[F("reload")] = (mConfig->sys.eth.enabled) ? 5 : 20;
             #else
             obj[F("reload")] = 20;
             #endif
@@ -505,8 +508,8 @@ class RestApi {
             mApp->eraseSettings(true);
             mApp->setRebootFlag();
             obj[F("html")] = F("Factory reset: success");
-            #if defined(ETHERNET) && defined(CONFIG_IDF_TARGET_ESP32S3)
-            obj[F("reload")] = 5;
+            #if defined(ETHERNET)
+            obj[F("reload")] = (mConfig->sys.eth.enabled) ? 5 : 20;
             #else
             obj[F("reload")] = 20;
             #endif
@@ -757,11 +760,23 @@ class RestApi {
             obj[F("last_id")] = iv->getChannelFieldValue(CH0, FLD_EVT, rec);
 
             JsonArray alarm = obj.createNestedArray(F("alarm"));
-            for(uint8_t i = 0; i < 10; i++) {
-                alarm[i][F("code")]  = iv->lastAlarm[i].code;
-                alarm[i][F("str")]   = iv->getAlarmStr(iv->lastAlarm[i].code);
-                alarm[i][F("start")] = iv->lastAlarm[i].start;
-                alarm[i][F("end")]   = iv->lastAlarm[i].end;
+
+            // find oldest alarm
+            uint8_t offset = 0;
+            uint32_t oldestStart = 0xffffffff;
+            for(uint8_t i = 0; i < Inverter<>::MaxAlarmNum; i++) {
+                if((iv->lastAlarm[i].start != 0) && (iv->lastAlarm[i].start < oldestStart)) {
+                    offset = i;
+                    oldestStart = iv->lastAlarm[i].start;
+                }
+            }
+
+            for(uint8_t i = 0; i < Inverter<>::MaxAlarmNum; i++) {
+                uint8_t pos = (i + offset) % Inverter<>::MaxAlarmNum;
+                alarm[pos][F("code")]  = iv->lastAlarm[pos].code;
+                alarm[pos][F("str")]   = iv->getAlarmStr(iv->lastAlarm[pos].code);
+                alarm[pos][F("start")] = iv->lastAlarm[pos].start;
+                alarm[pos][F("end")]   = iv->lastAlarm[pos].end;
             }
         }
 
@@ -808,6 +823,7 @@ class RestApi {
             obj[F("user")]       = String(mConfig->mqtt.user);
             obj[F("pwd")]        = (strlen(mConfig->mqtt.pwd) > 0) ? F("{PWD}") : String("");
             obj[F("topic")]      = String(mConfig->mqtt.topic);
+            obj[F("json")]       = (bool) mConfig->mqtt.json;
             obj[F("interval")]   = String(mConfig->mqtt.interval);
             obj[F("retain")]     = (bool)mConfig->mqtt.enableRetain;
         }
@@ -873,6 +889,106 @@ class RestApi {
             obj[F("reset")]        = mConfig->sys.eth.pinRst;
         }
         #endif
+
+        void getNetworkInfo(JsonObject obj) {
+            #if defined(ETHERNET)
+            bool isWired = mApp->isWiredConnection();
+            if(!isWired)
+                obj[F("wifi_channel")] = WiFi.channel();
+
+            obj[F("wired")] = isWired;
+            #else
+                obj[F("wired")]        = false;
+                obj[F("wifi_channel")] = WiFi.channel();
+            #endif
+
+            obj[F("ap_pwd")] = mConfig->sys.apPwd;
+            obj[F("ssid")]   = mConfig->sys.stationSsid;
+            obj[F("hidd")]   = mConfig->sys.isHidden;
+            obj[F("mac")]    = mApp->getMac();
+            obj[F("ip")]     = mApp->getIp();
+        }
+
+        void getChipInfo(JsonObject obj) {
+            obj[F("cpu_freq")]     = ESP.getCpuFreqMHz();
+            obj[F("sdk")]          = ESP.getSdkVersion();
+
+            #if defined(ESP32)
+                obj[F("temp_sensor_c")] = ah::readTemperature();
+                obj[F("revision")] = ESP.getChipRevision();
+                obj[F("model")]    = ESP.getChipModel();
+                obj[F("cores")]    = ESP.getChipCores();
+
+                switch (esp_reset_reason()) {
+                    default:
+                        [[fallthrough]];
+                    case ESP_RST_UNKNOWN:
+                        obj[F("reboot_reason")] = F("Unknown");
+                        break;
+                    case ESP_RST_POWERON:
+                        obj[F("reboot_reason")] = F("Power on");
+                        break;
+                    case ESP_RST_EXT:
+                        obj[F("reboot_reason")] = F("External");
+                        break;
+                    case ESP_RST_SW:
+                        obj[F("reboot_reason")] = F("Software");
+                        break;
+                    case ESP_RST_PANIC:
+                        obj[F("reboot_reason")] = F("Panic");
+                        break;
+                    case ESP_RST_INT_WDT:
+                        obj[F("reboot_reason")] = F("Interrupt Watchdog");
+                        break;
+                    case ESP_RST_TASK_WDT:
+                        obj[F("reboot_reason")] = F("Task Watchdog");
+                        break;
+                    case ESP_RST_WDT:
+                        obj[F("reboot_reason")] = F("Watchdog");
+                        break;
+                    case ESP_RST_DEEPSLEEP:
+                        obj[F("reboot_reason")] = F("Deepsleep");
+                        break;
+                    case ESP_RST_BROWNOUT:
+                        obj[F("reboot_reason")] = F("Brownout");
+                        break;
+                    case ESP_RST_SDIO:
+                        obj[F("reboot_reason")] = F("SDIO");
+                        break;
+                }
+            #else
+                obj[F("core_version")]  = ESP.getCoreVersion();
+                obj[F("reboot_reason")] = ESP.getResetReason();
+            #endif
+        }
+
+        void getMemoryInfo(JsonObject obj) {
+            obj[F("heap_frag")]         = mHeapFrag;
+            obj[F("heap_max_free_blk")] = mHeapFreeBlk;
+            obj[F("heap_free")]         = mHeapFree;
+
+            obj[F("par_size_app0")] = ESP.getFreeSketchSpace();
+            obj[F("par_used_app0")] = ESP.getSketchSize();
+
+            #if defined(ESP32)
+                obj[F("heap_total")] = ESP.getHeapSize();
+
+                const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, "coredump");
+                if (partition != NULL)
+                    obj[F("flash_size")] = partition->address + partition->size;
+
+                obj[F("par_size_spiffs")] = LittleFS.totalBytes();
+                obj[F("par_used_spiffs")] = LittleFS.usedBytes();
+            #else
+                obj[F("flash_size")] = ESP.getFlashChipRealSize();
+
+                FSInfo info;
+                LittleFS.info(info);
+                obj[F("par_used_spiffs")] = info.usedBytes;
+                obj[F("par_size_spiffs")] = info.totalBytes;
+                obj[F("heap_total")] = 24*1014; // FIXME: don't know correct value
+            #endif
+        }
 
         void getRadioNrf(JsonObject obj) {
             obj[F("en")] = (bool) mConfig->nrf.enabled;
@@ -961,11 +1077,9 @@ class RestApi {
                 warn.add(F(REBOOT_ESP_APPLY_CHANGES));
             if(0 == mApp->getTimestamp())
                 warn.add(F(TIME_NOT_SET));
-            #if !defined(ETHERNET)
-                #if !defined(ESP32)
-                if(mApp->getWasInCh12to14())
-                    warn.add(F(WAS_IN_CH_12_TO_14));
-                #endif
+            #if !defined(ESP32)
+            if(mApp->getWasInCh12to14())
+                warn.add(F(WAS_IN_CH_12_TO_14));
             #endif
         }
 
@@ -989,12 +1103,10 @@ class RestApi {
             getDisplay(obj.createNestedObject(F("display")));
         }
 
-        #if !defined(ETHERNET)
         void getNetworks(JsonObject obj) {
             obj[F("success")] = mApp->getAvailNetworks(obj);
             obj[F("ip")] = mApp->getIp();
         }
-        #endif /* !defined(ETHERNET) */
 
         void getIp(JsonObject obj) {
             obj[F("ip")] = mApp->getIp();
@@ -1112,6 +1224,13 @@ class RestApi {
             } else if(F("dev") == jsonIn[F("cmd")]) {
                 DPRINTLN(DBG_INFO, F("dev cmd"));
                 iv->setDevCommand(jsonIn[F("val")].as<int>());
+            } else if(F("restart_ahoy") == jsonIn[F("cmd")]) {
+                mApp->setRebootFlag();
+            } else if(F("cmt_search") == jsonIn[F("cmd")]) {
+                if(!mApp->cmtSearch(jsonIn[F("id")], jsonIn[F("to_ch")])) {
+                    jsonOut[F("error")] = F("ERR_INVERTER_NOT_FOUND");
+                    return false;
+                }
             } else {
                 jsonOut[F("error")] = F("ERR_UNKNOWN_CMD");
                 return false;
@@ -1137,14 +1256,13 @@ class RestApi {
                 mTimezoneOffset = jsonIn[F("val")];
             else if(F("discovery_cfg") == jsonIn[F("cmd")])
                 mApp->setMqttDiscoveryFlag(); // for homeassistant
-            #if !defined(ETHERNET)
             else if(F("save_wifi") == jsonIn[F("cmd")]) {
                 snprintf(mConfig->sys.stationSsid, SSID_LEN, "%s", jsonIn[F("ssid")].as<const char*>());
                 snprintf(mConfig->sys.stationPwd, PWD_LEN, "%s", jsonIn[F("pwd")].as<const char*>());
                 mApp->saveSettings(false); // without reboot
                 mApp->setupStation();
             }
-            #else
+            #if defined(ETHERNET)
             else if(F("save_eth") == jsonIn[F("cmd")]) {
                 mConfig->sys.eth.enabled = jsonIn[F("en")].as<bool>();
                 mConfig->sys.eth.pinCs = jsonIn[F("cs")].as<uint8_t>();
@@ -1155,9 +1273,21 @@ class RestApi {
                 mConfig->sys.eth.pinRst = jsonIn[F("reset")].as<uint8_t>();
                 mApp->saveSettings(true);
             }
-            #endif /* !defined(ETHERNET */
+            #endif
             else if(F("save_iv") == jsonIn[F("cmd")]) {
-                Inverter<> *iv = mSys->getInverterByPos(jsonIn[F("id")], false);
+                Inverter<> *iv;
+
+                for(uint8_t i = 0; i < MAX_NUM_INVERTERS; i++) {
+                    iv = mSys->getInverterByPos(i, true);
+                    if(nullptr != iv) {
+                        if((i != jsonIn[F("id")]) && (iv->config->serial.u64 == jsonIn[F("ser")])) {
+                            jsonOut[F("error")] = F("ERR_DUPLICATE_INVERTER");
+                            return false;
+                        }
+                    }
+                }
+
+                iv = mSys->getInverterByPos(jsonIn[F("id")], false);
                 iv->config->enabled = jsonIn[F("en")];
                 iv->config->serial.u64 = jsonIn[F("ser")];
                 snprintf(iv->config->name, MAX_NAME_LENGTH, "%s", jsonIn[F("name")].as<const char*>());

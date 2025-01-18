@@ -35,14 +35,21 @@ namespace ah {
                 mMax        = 0;
                 mPrevMillis = millis();
                 mTsMillis   = mPrevMillis % 1000;
+                mFastTicker = false;
                 resetTicker();
             }
 
             virtual void loop(void) {
                 mMillis = millis();
                 mDiff = mMillis - mPrevMillis;
-                if (mDiff < 1000)
+                if (mDiff < 1000) {
+                    if (mFastTicker) {
+                        mDiffSeconds = 0;
+                        checkTicker();
+                        mFastTicker = false;
+                    }
                     return;
+                }
 
                 mDiffSeconds = 1;
                 if (mDiff < 2000)
@@ -66,25 +73,32 @@ namespace ah {
 
             }
 
-            void once(scdCb c, uint32_t timeout, const char *name)     { addTicker(c, timeout, 0, false, name); }
-            void onceAt(scdCb c, uint32_t timestamp, const char *name) { addTicker(c, timestamp, 0, true, name); }
-            uint8_t every(scdCb c, uint32_t interval, const char *name){ return addTicker(c, interval, interval, false, name); }
+            uint8_t once(scdCb c, uint32_t timeout, const char *name)     { return addTicker(c, timeout, 0, false, name); }
+            uint8_t onceAt(scdCb c, uint32_t timestamp, const char *name) { return addTicker(c, timestamp, 0, true, name); }
+            uint8_t every(scdCb c, uint32_t interval, const char *name)   { return addTicker(c, interval, interval, false, name); }
 
-            void everySec(scdCb c, const char *name)  { every(c, SCD_SEC, name);  }
-            void everyMin(scdCb c, const char *name)  { every(c, SCD_MIN, name);  }
-            void everyHour(scdCb c, const char *name) { every(c, SCD_HOUR, name); }
-            void every12h(scdCb c, const char *name)  { every(c, SCD_12H, name);  }
-            void everyDay(scdCb c, const char *name)  { every(c, SCD_DAY, name);  }
+            uint8_t everySec(scdCb c, const char *name)  { return every(c, SCD_SEC, name); }
+            uint8_t everyMin(scdCb c, const char *name)  { return every(c, SCD_MIN, name); }
+            uint8_t everyHour(scdCb c, const char *name) { return every(c, SCD_HOUR, name); }
+            uint8_t every12h(scdCb c, const char *name)  { return every(c, SCD_12H, name); }
+            uint8_t everyDay(scdCb c, const char *name)  { return every(c, SCD_DAY, name); }
 
             virtual void setTimestamp(uint32_t ts) {
                 mTimestamp = ts;
             }
 
-            bool resetEveryById(uint8_t id) {
-                if (mTickerInUse[id] == false)
-                    return false;
-                mTicker[id].timeout = mTicker[id].reload;
-                return true;
+            bool resetTickerByName(const char* name) {
+                for (uint8_t id = 0; id < MAX_NUM_TICKER; id++) {
+                    if (mTickerInUse[id]) {
+                        if(strncmp(name, mTicker[id].name, strlen(name)) == 0) {
+                            mTicker[id].timeout = mTicker[id].reload;
+                            mTickerInUse[id] = false;
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
             }
 
             uint32_t getUptime(void) {
@@ -127,6 +141,8 @@ namespace ah {
                         mTicker[i].isTimestamp = isTimestamp;
                         strncpy(mTicker[i].name, name, 5);
                         mTicker[i].name[5]=0;
+                        if (timeout == 0 && reload == false)
+                            mFastTicker = true;
                         if(mMax == i)
                             mMax = i + 1;
                         return i;
@@ -162,6 +178,7 @@ namespace ah {
             uint32_t mMillis = 0, mPrevMillis = 0, mDiff = 0;
             uint8_t mDiffSeconds = 0;
             uint8_t mMax = 0;
+            bool mFastTicker;
     };
 }
 

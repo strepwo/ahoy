@@ -23,6 +23,7 @@ class AhoyWifi : public AhoyNetwork {
         }
 
         void tickNetworkLoop() override {
+            AhoyNetwork::tickNetworkLoop();
             if(mAp.isEnabled())
                 mAp.tickLoop();
 
@@ -71,6 +72,7 @@ class AhoyWifi : public AhoyNetwork {
                         DBGPRINT(" "  + String(bssid[j], HEX));
                     }
                     DBGPRINTLN("");
+                    setStaticIp();
                     WiFi.begin(mConfig->sys.stationSsid, mConfig->sys.stationPwd, 0, &bssid[0]);
                     mWifiConnecting = true;
                     break;
@@ -84,7 +86,6 @@ class AhoyWifi : public AhoyNetwork {
                     break;
 
                 case NetworkState::CONNECTED:
-                    setStaticIp();
                     break;
 
                 case NetworkState::GOT_IP:
@@ -109,6 +110,10 @@ class AhoyWifi : public AhoyNetwork {
 
         String getIp(void) override {
             return WiFi.localIP().toString();
+        }
+
+        String getMac(void) override {
+            return WiFi.macAddress();
         }
 
         bool getWasInCh12to14() override {

@@ -339,6 +339,7 @@ p {
     .fs-sm-8 { font-size: 1rem; }
 
     .d-sm-block { display: block !important;}
+    .d-sm-cell { display: table-cell !important;}
     .d-sm-none { display: none !important; }
 }
 
@@ -858,4 +859,17 @@ ul {
 .container {
     height: 100%;
     overflow: auto;
+}
+
+.progress {
+    display: flex;
+    height: 1rem;
+    overflow: hidden;
+    background-color: #e9ecef;
+    border-radius: .25rem;
+}
+
+.progress-bar {
+    display: flex;
+    background-color: var(--primary);
 }

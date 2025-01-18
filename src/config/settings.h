@@ -99,14 +99,13 @@ typedef struct {
     int8_t timezone;
 
     char apPwd[PWD_LEN];
-#if !defined(ETHERNET)
     // wifi
     char stationSsid[SSID_LEN];
     char stationPwd[PWD_LEN];
     bool isHidden;
-#else
+    #if defined(ETHERNET)
     cfgEth_t eth;
-#endif /* !defined(ETHERNET) */
+    #endif
 
     cfgIp_t ip;
 } cfgSys_t;
@@ -164,6 +163,7 @@ typedef struct {
     char user[MQTT_USER_LEN];
     char pwd[MQTT_PWD_LEN];
     char topic[MQTT_TOPIC_LEN];
+    bool json;
     uint16_t interval;
     bool enableRetain;
 } cfgMqtt_t;
@@ -282,19 +282,7 @@ class settings {
             return mLastSaveSucceed;
         }
 
-        void getInfo(uint32_t *used, uint32_t *size) {
-            #if !defined(ESP32)
-                FSInfo info;
-                LittleFS.info(info);
-                *used = info.usedBytes;
-                *size = info.totalBytes;
 
-                DPRINTLN(DBG_INFO, F("-- FILESYSTEM INFO --"));
-                DPRINTLN(DBG_INFO, String(info.usedBytes) + F(" of ") + String(info.totalBytes)  + F(" used"));
-            #else
-                DPRINTLN(DBG_WARN, F("not supported by ESP32"));
-            #endif
-        }
 
         bool readSettings(const char* path) {
             loadDefaults();
@@ -409,13 +397,11 @@ class settings {
             // restore temp settings
             if(keepWifi)
                 memcpy(&mCfg.sys, &tmp, sizeof(cfgSys_t));
-            #if !defined(ETHERNET)
             else {
-                snprintf(mCfg.sys.stationSsid, SSID_LEN, FB_WIFI_SSID);
-                snprintf(mCfg.sys.stationPwd,  PWD_LEN,  FB_WIFI_PWD);
+                mCfg.sys.stationSsid[0] = '\0';
+                mCfg.sys.stationPwd[0] = '\0';
                 mCfg.sys.isHidden = false;
             }
-            #endif
             snprintf(mCfg.sys.apPwd,       PWD_LEN,  WIFI_AP_PWD);
 
             #if defined(ETHERNET)
@@ -485,6 +471,7 @@ class settings {
             snprintf(mCfg.mqtt.pwd,    MQTT_PWD_LEN,   "%s", DEF_MQTT_PWD);
             snprintf(mCfg.mqtt.topic,  MQTT_TOPIC_LEN, "%s", DEF_MQTT_TOPIC);
             mCfg.mqtt.interval = 0; // off
+            mCfg.mqtt.json = false; // off
             mCfg.mqtt.enableRetain = true;
 
             mCfg.inst.sendInterval       = SEND_INTERVAL;
@@ -569,12 +556,10 @@ class settings {
         void jsonNetwork(JsonObject obj, bool set = false) {
             if(set) {
                 char buf[16];
-                #if !defined(ETHERNET)
                 obj[F("ssid")] = mCfg.sys.stationSsid;
                 obj[F("pwd")]  = mCfg.sys.stationPwd;
                 obj[F("ap_pwd")]  = mCfg.sys.apPwd;
                 obj[F("hidd")] = (bool) mCfg.sys.isHidden;
-                #endif /* !defined(ETHERNET) */
                 obj[F("dev")]  = mCfg.sys.deviceName;
                 obj[F("adm")]  = mCfg.sys.adminPwd;
                 obj[F("prot_mask")] = mCfg.sys.protectionMask;
@@ -598,12 +583,10 @@ class settings {
                 obj[F("rst")]  = mCfg.sys.eth.pinRst;
                 #endif
             } else {
-                #if !defined(ETHERNET)
                 getChar(obj, F("ssid"), mCfg.sys.stationSsid, SSID_LEN);
                 getChar(obj, F("pwd"), mCfg.sys.stationPwd, PWD_LEN);
                 getChar(obj, F("ap_pwd"), mCfg.sys.apPwd, PWD_LEN);
                 getVal<bool>(obj, F("hidd"), &mCfg.sys.isHidden);
-                #endif /* !defined(ETHERNET) */
                 getChar(obj, F("dev"), mCfg.sys.deviceName, DEVNAME_LEN);
                 getChar(obj, F("adm"), mCfg.sys.adminPwd, PWD_LEN);
                 getVal<uint16_t>(obj, F("prot_mask"), &mCfg.sys.protectionMask);
@@ -742,12 +725,14 @@ class settings {
                 obj[F("user")]     = mCfg.mqtt.user;
                 obj[F("pwd")]      = mCfg.mqtt.pwd;
                 obj[F("topic")]    = mCfg.mqtt.topic;
+                obj[F("json")]     = mCfg.mqtt.json;
                 obj[F("intvl")]    = mCfg.mqtt.interval;
                 obj[F("retain")]   = mCfg.mqtt.enableRetain;
 
             } else {
                 getVal<uint16_t>(obj, F("port"), &mCfg.mqtt.port);
                 getVal<uint16_t>(obj, F("intvl"), &mCfg.mqtt.interval);
+                getVal<bool>(obj, F("json"), &mCfg.mqtt.json);
                 getChar(obj, F("broker"), mCfg.mqtt.broker, MQTT_ADDR_LEN);
                 getChar(obj, F("user"), mCfg.mqtt.user, MQTT_USER_LEN);
                 getChar(obj, F("clientId"), mCfg.mqtt.clientId, MQTT_CLIENTID_LEN);

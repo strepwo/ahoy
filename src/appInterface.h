@@ -28,13 +28,13 @@ class IApp {
 
         virtual void addOnce(ah::scdCb c, uint32_t timeout, const char *name) = 0;
 
-        #if !defined(ETHERNET)
         virtual bool getAvailNetworks(JsonObject obj) = 0;
         virtual void setupStation(void) = 0;
         virtual bool getWasInCh12to14(void) const = 0;
-        #endif /* defined(ETHERNET) */
         virtual String getIp(void) = 0;
+        virtual String getMac(void) = 0;
         virtual bool isApActive(void) = 0;
+        virtual bool isNetworkConnected() = 0;
 
         virtual uint32_t getUptime() = 0;
         virtual uint32_t getTimestamp() = 0;
@@ -56,8 +56,14 @@ class IApp {
         virtual bool getNrfEnabled() = 0;
         virtual bool getCmtEnabled() = 0;
 
+        virtual bool cmtSearch(uint8_t id, uint8_t toCh) = 0;
+
         virtual uint32_t getMqttRxCnt() = 0;
         virtual uint32_t getMqttTxCnt() = 0;
+
+        #if defined(ETHERNET)
+        virtual bool isWiredConnection() = 0;
+        #endif
 
         virtual void lock(bool fromWeb) = 0;
         virtual char *unlock(const char *clientIp, bool loginFromWeb) = 0;

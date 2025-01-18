@@ -45,8 +45,8 @@
     #else
         #include "network/AhoyWifiEsp8266.h"
     #endif
-    #include "utils/improv.h"
 #endif /* defined(ETHERNET) */
+#include "utils/improv.h"
 
 #if defined(ENABLE_SIMULATOR)
     #include "hm/simulator.h"
@@ -89,7 +89,7 @@ class app : public IApp, public ah::Scheduler {
 
         void setup(void);
         void loop(void) override;
-        void onNetwork(bool gotIp);
+        void onNetwork(bool connected);
         void regularTickers(void);
 
         void handleIntr(void) {
@@ -167,7 +167,6 @@ class app : public IApp, public ah::Scheduler {
             return mSaveReboot;
         }
 
-        #if !defined(ETHERNET)
         bool getAvailNetworks(JsonObject obj) override {
             return mNetwork->getAvailNetworks(obj, this);
         }
@@ -183,14 +182,21 @@ class app : public IApp, public ah::Scheduler {
             return false;
             #endif
         }
-        #endif /* !defined(ETHERNET) */
 
         String getIp(void) override {
             return mNetwork->getIp();
         }
 
+        String getMac(void) override {
+            return mNetwork->getMac();
+        }
+
         bool isApActive(void) override {
             return mNetwork->isApActive();
+        }
+
+        bool isNetworkConnected() override {
+            return mNetwork->isConnected();
         }
 
         void setRebootFlag() override {
@@ -255,6 +261,12 @@ class app : public IApp, public ah::Scheduler {
             #endif
         }
 
+        #if defined(ETHERNET)
+        bool isWiredConnection() override {
+            return mNetwork->isWiredConnection();
+        }
+        #endif
+
         void lock(bool fromWeb) override {
             mProtection->lock(fromWeb);
         }
@@ -277,6 +289,29 @@ class app : public IApp, public ah::Scheduler {
 
         bool getCmtEnabled(void) override {
             return mConfig->cmt.enabled;
+        }
+
+        bool cmtSearch(uint8_t id, uint8_t toCh) override {
+            #if defined(ESP32)
+            Inverter<> *iv;
+
+            for(uint8_t i = 0; i < MAX_NUM_INVERTERS; i++) {
+                iv = mSys.getInverterByPos(i, true);
+                if(nullptr != iv) {
+                    if(i == id)
+                        break;
+                    else
+                        iv = nullptr;
+                }
+            }
+
+            if(nullptr != iv) {
+                mCmtRadio.catchInverter(iv, toCh);
+                return true;
+            }
+            #endif
+
+            return false;
         }
 
         uint8_t getNrfIrqPin(void) {
@@ -395,10 +430,7 @@ class app : public IApp, public ah::Scheduler {
                 setRebootFlag();
         }
 
-        void tickNtpUpdate(void);
-        void onNtpUpdate(bool gotTime);
-        bool mNtpReceived = false;
-        void updateNtp(void);
+        void onNtpUpdate(uint32_t utcTimestamp);
 
         void triggerTickSend(uint8_t id) override {
             once([this, id]() {
@@ -433,9 +465,7 @@ class app : public IApp, public ah::Scheduler {
         #endif
 
         PubSerialType mPubSerial;
-        #if !defined(ETHERNET)
         //Improv mImprov;
-        #endif
         #ifdef ESP32
         CmtRadio<> mCmtRadio;
         #endif
@@ -455,7 +485,6 @@ class app : public IApp, public ah::Scheduler {
         #if defined(ENABLE_MQTT)
         PubMqttType mMqtt;
         #endif
-        bool mTickerInstallOnce = false;
         bool mMqttEnabled = false;
 
         // sun

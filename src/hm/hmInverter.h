@@ -142,6 +142,13 @@ const calcFunc_t<T> calcFunctions[] = {
 
 template <class REC_TYP>
 class Inverter {
+    public: /*types*/
+        #if defined(ESP32)
+            constexpr static uint8_t MaxAlarmNum = 50;
+        #else
+            constexpr static uint8_t MaxAlarmNum = 10;
+        #endif
+
     public:
         uint8_t       ivGen = IV_UNKNOWN;                   // generation of inverter (HM / MI)
         uint8_t       ivRadioType = INV_RADIO_TYPE_UNKNOWN; // refers to used radio (nRF24 / CMT)
@@ -161,7 +168,7 @@ class Inverter {
         record_t<REC_TYP> recordConfig;                     // structure for system config values
         record_t<REC_TYP> recordAlarm;                      // structure for alarm values
         InverterStatus status = InverterStatus::OFF;        // indicates the current inverter status
-        std::array<alarm_t, 10> lastAlarm;                  // holds last 10 alarms
+        std::array<alarm_t, MaxAlarmNum> lastAlarm;         // holds last x alarms
         int8_t        rssi = 0;                             // RSSI
         uint16_t      alarmCnt = 0;                         // counts the total number of occurred alarms
         uint16_t      alarmLastId = 0;                      // lastId which was received
@@ -788,6 +795,10 @@ class Inverter {
                             rec->length  = (uint8_t)(HMS4CH_LIST_LEN);
                             rec->assign  = reinterpret_cast<byteAssign_t*>(const_cast<byteAssign_t*>(hms4chAssignment));
                             rec->pyldLen = HMS4CH_PAYLOAD_LEN;
+                        } else if(IV_HMT == ivGen){
+                            rec->length  = (uint8_t)(HMT4CH_LIST_LEN);
+                            rec->assign  = reinterpret_cast<byteAssign_t*>(const_cast<byteAssign_t*>(hmt4chAssignment));
+                            rec->pyldLen = HMT4CH_PAYLOAD_LEN;
                         }
                         channels = 4;
                     }
@@ -916,7 +927,6 @@ class Inverter {
             DPRINTLN(DBG_DEBUG, "Alarm #" + String(pyld[startOff+1]) + " '" + String(getAlarmStr(pyld[startOff+1])) + "' start: " + ah::getTimeStr(start) + ", end: " + ah::getTimeStr(endTime));
             addAlarm(pyld[startOff+1], start, endTime);
 
-            alarmCnt++;
             alarmLastId = alarmMesIndex;
 
             return pyld[startOff+1];
@@ -1064,8 +1074,28 @@ class Inverter {
 
     private:
         inline void addAlarm(uint16_t code, uint32_t start, uint32_t end) {
+            uint8_t i = 0;
+
+            if(start > end)
+                end = 0;
+
+            for(; i < MaxAlarmNum; i++) {
+                ++mAlarmNxtWrPos;
+                mAlarmNxtWrPos = mAlarmNxtWrPos % MaxAlarmNum;
+
+                if(lastAlarm[mAlarmNxtWrPos].code == code && lastAlarm[mAlarmNxtWrPos].start == start) {
+                    // replace with same or update end time
+                    if(lastAlarm[mAlarmNxtWrPos].end == 0 || lastAlarm[mAlarmNxtWrPos].end == end) {
+                        break;
+                    }
+                }
+            }
+
+            if(alarmCnt < MaxAlarmNum && alarmCnt <= mAlarmNxtWrPos)
+                alarmCnt = mAlarmNxtWrPos + 1;
+
             lastAlarm[mAlarmNxtWrPos] = alarm_t(code, start, end);
-            if(++mAlarmNxtWrPos >= 10) // rolling buffer
+            if(++mAlarmNxtWrPos >= MaxAlarmNum) // rolling buffer
                 mAlarmNxtWrPos = 0;
         }
 

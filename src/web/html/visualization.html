@@ -34,10 +34,11 @@
 
             function parseGeneric(obj) {
                 if(true == exeOnce){
-                    parseNav(obj);
-                    parseESP(obj);
+                    parseNav(obj)
+                    parseESP(obj)
+                    parseTitle(obj)
                 }
-                parseRssi(obj);
+                parseRssi(obj)
             }
 
             function numBig(val, unit, des) {
@@ -210,8 +211,11 @@
                 if(obj.rssi > -127) {
                     if(obj.generation < 2)
                         ageInfo += " (RSSI: " + ((obj.rssi == -64) ? "&gt;=" : "&lt;") + " -64&nbsp;dBm)";
-                    else
+                    else {
+                        if(obj.rssi == 0)
+                            obj.rssi = "--";
                         ageInfo += " (RSSI: " + obj.rssi + "&nbsp;dBm)";
+                    }
                 }
 
                 return ml("div", {class: "mb-5"}, [
@@ -278,7 +282,7 @@
                                 ml("div", {class: "col mt-3"}, String(a.str)),
                                 ml("div", {class: "col mt-3"}, String(a.code)),
                                 ml("div", {class: "col mt-3"}, String(toIsoTimeStr(new Date((a.start + offs) * 1000)))),
-                                ml("div", {class: "col mt-3"}, String(toIsoTimeStr(new Date((a.end + offs) * 1000))))
+                                ml("div", {class: "col mt-3"}, (a.end == 0) ? "-" : String(toIsoTimeStr(new Date((a.end + offs) * 1000))))
                             ])
                         );
                     }

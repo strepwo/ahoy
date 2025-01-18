@@ -33,7 +33,7 @@ class DisplayEPaper {
         void fullRefresh();
         void init(uint8_t type, uint8_t _CS, uint8_t _DC, uint8_t _RST, uint8_t _BUSY, uint8_t _SCK, uint8_t _MOSI, uint32_t* utcTs, const char* version);
         void config(uint8_t rotation, bool enPowerSave);
-        void loop(float totalPower, float totalYieldDay, float totalYieldTotal, uint8_t isprod);
+        void loop(float totalPower, float totalYieldDay, float totalYieldTotal, uint8_t isprod, String ip, bool networkConnected);
         void refreshLoop();
         void tickerSecond();
 
@@ -48,9 +48,9 @@ class DisplayEPaper {
             DONE,
             BLACK,
             WHITE,
-            WAIT,
             PARTITIALS,
-            LOGO
+            LOGO,
+            LOGO_WAIT
         };
 
         uint8_t mDisplayRotation;
@@ -62,8 +62,11 @@ class DisplayEPaper {
         uint32_t* mUtcTs;
         bool mEnPowerSave;
         const char* _version;
-        RefreshStatus mRefreshState, mNextRefreshState;
+        RefreshStatus mRefreshState;
+
         uint8_t mSecondCnt;
+        bool mLogoDisplayed;
+        bool mNetworkConnected;
         #if defined(SPI_HAL)
         epdHal hal;
         #endif
